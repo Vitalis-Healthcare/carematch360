@@ -1,0 +1,39 @@
+import { NextRequest, NextResponse } from 'next/server'
+
+const PUBLIC_PATHS = [
+  '/login', '/provider/login', '/auth/verify', '/api/auth/',
+  '/getcare', '/apply', '/respond', '/api/respond',
+  '/api/clients/inquire', '/api/providers/apply', '/thank-you',
+  '/_next', '/favicon',
+]
+
+export async function middleware(req: NextRequest) {
+  const host = req.headers.get('host') ?? ''
+  const { pathname } = req.nextUrl
+
+  // Subdomain routing — exclude /api/ and /thank-you so they reach their own handlers
+  if (host.startsWith('getcare.') && !pathname.startsWith('/api/') && !pathname.startsWith('/thank-you')) {
+    return NextResponse.rewrite(new URL('/getcare', req.url))
+  }
+  if (host.startsWith('apply.') && !pathname.startsWith('/api/') && !pathname.startsWith('/thank-you')) {
+    return NextResponse.rewrite(new URL('/apply', req.url))
+  }
+
+  // Allow public paths
+  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
+    return NextResponse.next()
+  }
+
+  // Check session cookie
+  const sessionToken = req.cookies.get('cm360_session')?.value
+  if (!sessionToken) {
+    const isProvider = pathname.startsWith('/provider/')
+    return NextResponse.redirect(new URL(isProvider ? '/provider/login' : '/login', req.url))
+  }
+
+  return NextResponse.next()
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+}
