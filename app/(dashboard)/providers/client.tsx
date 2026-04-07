@@ -8,6 +8,14 @@ const CRED_COLORS: Record<string, string> = {
   CMT: '#F59E0B', PT: '#EF4444', OT: '#EC4899', ST: '#6366F1', UA: '#84CC16',
 }
 
+// Source label + color config — kept in one place so badges and dropdowns
+// stay in sync.
+const SOURCE_CONFIG: Record<string, { label: string; short: string; color: string; bg: string; border: string }> = {
+  axiscare:    { label: 'AxisCare Import',     short: 'AxisCare',    color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' },
+  application: { label: 'Online Application',  short: 'Application', color: '#065F46', bg: '#ECFDF5', border: '#A7F3D0' },
+  manual:      { label: 'Manually Added',      short: 'Manual',      color: '#475569', bg: '#F1F5F9', border: '#CBD5E1' },
+}
+
 interface Props {
   providers: any[]
   inactiveCount: number
@@ -15,6 +23,25 @@ interface Props {
   params: any
   credentialTypes: string[]
   credentialLabels: Record<string, string>
+}
+
+// Friendly relative date for the Joined column. Falls back to a short
+// absolute date for anything older than ~30 days.
+function formatJoined(iso?: string): { rel: string; abs: string } {
+  if (!iso) return { rel: '—', abs: '' }
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return { rel: '—', abs: '' }
+  const now = Date.now()
+  const diffMs = now - d.getTime()
+  const days = Math.floor(diffMs / 86400000)
+  const abs = d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+  let rel: string
+  if (days < 1) rel = 'Today'
+  else if (days === 1) rel = 'Yesterday'
+  else if (days < 7) rel = `${days}d ago`
+  else if (days < 30) rel = `${Math.floor(days / 7)}w ago`
+  else rel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return { rel, abs }
 }
 
 export default function ProvidersClient({ providers, inactiveCount, activeCount, params, credentialTypes, credentialLabels }: Props) {
@@ -94,12 +121,36 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
     setTimeout(() => setToast(''), 3000)
   }
 
+  // Submit the filter form by updating the URL — this triggers a server
+  // re-fetch with the new searchParams.
+  function applyFilters(next: { search?: string; credential?: string; source?: string; sort?: string }) {
+    const sp = new URLSearchParams()
+    const search     = next.search     ?? params.search     ?? ''
+    const credential = next.credential ?? params.credential ?? ''
+    const source     = next.source     ?? params.source     ?? ''
+    const sort       = next.sort       ?? params.sort       ?? ''
+    if (search)     sp.set('search', search)
+    if (credential) sp.set('credential', credential)
+    if (source)     sp.set('source', source)
+    if (sort)       sp.set('sort', sort)
+    const qs = sp.toString()
+    startTransition(() => router.push(`/providers${qs ? `?${qs}` : ''}`))
+  }
+
+  // Counts for the active source filter chip
+  const sourceCounts = {
+    axiscare:    providers.filter(p => p._source === 'axiscare').length,
+    application: providers.filter(p => p._source === 'application').length,
+    manual:      providers.filter(p => p._source === 'manual').length,
+  }
+
   const S: any = {
     card: { background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
     badge: (color: string, bg: string) => ({ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, color, background: bg }),
     btnActivate: { background: 'linear-gradient(135deg,#10B981,#059669)', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' as const },
     btnSecondary: { background: '#fff', color: '#475569', border: '1px solid #E2E8F0', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 500, cursor: 'pointer' },
     btnGhost: { background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 12, padding: '4px 8px' },
+    select: { padding: '8px 12px', border: '1.5px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', background: '#fff', cursor: 'pointer' },
   }
 
   return (
@@ -171,13 +222,51 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
 
       {/* Filters */}
       <div style={{ ...S.card, padding: '14px 18px', marginBottom: 16 }}>
-        <form style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' as const }}>
-          <input name="search" defaultValue={params.search} placeholder="Search by name, email, city..."
-            style={{ padding: '8px 12px', border: '1.5px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', minWidth: 240 }}/>
-          <select name="credential" defaultValue={params.credential}
-            style={{ padding: '8px 12px', border: '1.5px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none' }}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            const fd = new FormData(e.currentTarget)
+            applyFilters({
+              search:     (fd.get('search')     as string) || '',
+              credential: (fd.get('credential') as string) || '',
+              source:     (fd.get('source')     as string) || '',
+              sort:       (fd.get('sort')       as string) || '',
+            })
+          }}
+          style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' as const }}
+        >
+          <input
+            name="search"
+            defaultValue={params.search ?? ''}
+            placeholder="Search by name, email, city..."
+            style={{ padding: '8px 12px', border: '1.5px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', minWidth: 240 }}
+          />
+          <select name="credential" defaultValue={params.credential ?? ''} style={S.select}>
             <option value="">All credentials</option>
             {credentialTypes.map(c => <option key={c} value={c}>{c} — {credentialLabels[c]}</option>)}
+          </select>
+
+          <select
+            name="source"
+            defaultValue={params.source ?? ''}
+            style={S.select}
+            onChange={(e) => applyFilters({ source: e.currentTarget.value })}
+          >
+            <option value="">All sources ({providers.length})</option>
+            <option value="axiscare">AxisCare Import ({sourceCounts.axiscare})</option>
+            <option value="application">Online Application ({sourceCounts.application})</option>
+            <option value="manual">Manually Added ({sourceCounts.manual})</option>
+          </select>
+
+          <select
+            name="sort"
+            defaultValue={params.sort ?? 'newest'}
+            style={S.select}
+            onChange={(e) => applyFilters({ sort: e.currentTarget.value })}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name">Name A–Z</option>
           </select>
 
           {/* View mode tabs */}
@@ -196,6 +285,42 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
           <Link href="/providers"><button type="button" style={{ ...S.btnGhost }}>Clear</button></Link>
         </form>
       </div>
+
+      {/* Active filter chip — shows when filtering by source */}
+      {(params.source || params.credential || params.search) && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: '#64748B' }}>Showing:</span>
+          {params.source && SOURCE_CONFIG[params.source] && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 600,
+              padding: '4px 10px', borderRadius: 16,
+              color: SOURCE_CONFIG[params.source].color,
+              background: SOURCE_CONFIG[params.source].bg,
+              border: `1px solid ${SOURCE_CONFIG[params.source].border}`,
+            }}>
+              {SOURCE_CONFIG[params.source].label}
+              <button
+                onClick={() => applyFilters({ source: '' })}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0, fontSize: 14, lineHeight: 1 }}
+                aria-label="Clear source filter"
+              >×</button>
+            </span>
+          )}
+          {params.credential && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 16, color: '#475569', background: '#F1F5F9', border: '1px solid #CBD5E1' }}>
+              Credential: {params.credential}
+              <button onClick={() => applyFilters({ credential: '' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0, fontSize: 14, lineHeight: 1 }} aria-label="Clear credential filter">×</button>
+            </span>
+          )}
+          {params.search && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 16, color: '#475569', background: '#F1F5F9', border: '1px solid #CBD5E1' }}>
+              "{params.search}"
+              <button onClick={() => applyFilters({ search: '' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0, fontSize: 14, lineHeight: 1 }} aria-label="Clear search">×</button>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       <div style={{ ...S.card, overflow: 'hidden' }}>
@@ -224,6 +349,7 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
                 <th style={{ padding: '11px 16px', textAlign: 'left' as const, fontSize: 11.5, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E2E8F0' }}>Name</th>
                 <th style={{ padding: '11px 16px', textAlign: 'left' as const, fontSize: 11.5, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E2E8F0' }}>Credential</th>
                 <th style={{ padding: '11px 16px', textAlign: 'left' as const, fontSize: 11.5, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E2E8F0' }}>Location</th>
+                <th style={{ padding: '11px 16px', textAlign: 'left' as const, fontSize: 11.5, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E2E8F0' }}>Joined</th>
                 <th style={{ padding: '11px 16px', textAlign: 'left' as const, fontSize: 11.5, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E2E8F0' }}>Status</th>
                 <th style={{ padding: '11px 16px', textAlign: 'left' as const, fontSize: 11.5, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E2E8F0' }}>Actions</th>
               </tr>
@@ -233,6 +359,8 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
                 const isInactive = p.status === 'inactive'
                 const isChecked = selected.has(p.id)
                 const credColor = CRED_COLORS[p.credential_type] ?? '#64748B'
+                const sourceCfg = SOURCE_CONFIG[p._source] ?? SOURCE_CONFIG.manual
+                const joined = formatJoined(p.created_at)
                 return (
                   <tr key={p.id} style={{ borderBottom: '1px solid #F1F5F9', background: isChecked ? '#F0FDF4' : isInactive ? '#FEFCE8' : '#fff', transition: 'background 0.1s' }}>
                     {(inactiveCount > 0 && viewMode !== 'active') && (
@@ -254,6 +382,18 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
                     <td style={{ padding: '12px 16px', fontSize: 13, color: '#64748B' }}>
                       {[p.city, p.state].filter(Boolean).join(', ') || '—'}
                       {p.service_radius_miles && <div style={{ fontSize: 11, color: '#94A3B8' }}>{p.service_radius_miles}mi radius</div>}
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ fontSize: 12.5, color: '#334155', fontWeight: 500 }} title={joined.abs}>{joined.rel}</div>
+                      <span style={{
+                        display: 'inline-block', marginTop: 3,
+                        fontSize: 10.5, fontWeight: 600,
+                        padding: '2px 7px', borderRadius: 10,
+                        color: sourceCfg.color, background: sourceCfg.bg,
+                        border: `1px solid ${sourceCfg.border}`,
+                      }}>
+                        {sourceCfg.short}
+                      </span>
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       {isInactive ? (
