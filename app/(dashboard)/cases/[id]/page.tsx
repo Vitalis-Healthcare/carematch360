@@ -69,6 +69,31 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
       />
 
       {/* Status banners */}
+      {caseData.vita_lead_id && caseData.status === 'lead' && (
+        <div style={{ background:'#FAF5FF', borderBottom:'1px solid #E9D5FF', padding:'14px 32px', display:'flex', alignItems:'flex-start', gap:14, fontSize:13.5 }}>
+          <span style={{ fontSize:20 }}>💼</span>
+          <div style={{ flex:1 }}>
+            <div style={{ fontWeight:600, color:'#6B21A8' }}>
+              Lead from Vita
+              {caseData.vita_lead_status && (
+                <span style={{ fontSize:11, fontWeight:500, color:'#A855F7', marginLeft:8, padding:'2px 8px', background:'#fff', borderRadius:10, border:'1px solid #E9D5FF', textTransform:'capitalize' }}>
+                  Vita stage: {caseData.vita_lead_status.replace(/_/g, ' ')}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize:12, color:'#7E22CE', marginTop:3 }}>
+              Pre-matching is enabled. Dispatch is locked until the lead is closed (won) in Vita
+              {caseData.allow_pre_dispatch ? ' — but you have enabled pre-dispatch on this case.' : ', or you enable pre-dispatch below.'}
+            </div>
+          </div>
+          {caseData.vita_lead_synced_at && (
+            <div style={{ fontSize:11, color:'var(--muted)' }}>
+              Last synced {new Date(caseData.vita_lead_synced_at).toLocaleString()}
+            </div>
+          )}
+        </div>
+      )}
+
       {assignedProvider && (
         <div style={{ background:'#ECFDF5', borderBottom:'1px solid #A7F3D0', padding:'12px 32px', display:'flex', alignItems:'center', gap:12, fontSize:13.5 }}>
           <span style={{ color:'#10B981', fontSize:18 }}>⭐</span>

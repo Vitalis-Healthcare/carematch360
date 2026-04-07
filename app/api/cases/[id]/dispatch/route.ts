@@ -33,6 +33,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .eq('id', id).single()
     if (caseErr || !caseData) return NextResponse.json({ error: 'Case not found' }, { status: 404 })
 
+    // Server-side lead-gate backstop. The frontend disables the button
+    // when status='lead' && !allow_pre_dispatch, but we re-check here so
+    // a malicious or buggy client can't bypass it.
+    if (caseData.status === 'lead' && !caseData.allow_pre_dispatch) {
+      return NextResponse.json({
+        error: 'Dispatch is locked: this case is a lead from Vita and pre-dispatch is not enabled. Enable pre-dispatch on the case detail page if you want to notify providers before the deal closes.',
+      }, { status: 403 })
+    }
+
     const client = Array.isArray(caseData.clients) ? caseData.clients[0] : caseData.clients
     const scheduleDesc = buildScheduleDesc(caseData)
 

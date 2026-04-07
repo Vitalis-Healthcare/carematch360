@@ -308,6 +308,8 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
               caseId={savedCaseId||caseData?.id||''}
               matches={matches}
               onDispatched={refreshMatches}
+              caseStatus={caseData?.status}
+              allowPreDispatch={caseData?.allow_pre_dispatch}
             />
           )}
 

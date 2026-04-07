@@ -2,11 +2,12 @@
 import { useRouter } from 'next/navigation'
 
 interface Props {
-  counts: { active: number; assigned: number; on_hold: number; closed: number }
+  counts: { leads: number; active: number; assigned: number; on_hold: number; closed: number }
   activeTab: string
 }
 
 const TABS = [
+  { key: 'leads',    label: 'Leads',     color: '#A855F7' },
   { key: 'active',   label: 'Active',    color: '#0EA5E9' },
   { key: 'assigned', label: 'Assigned',  color: '#10B981' },
   { key: 'on_hold',  label: 'On Hold',   color: '#F59E0B' },

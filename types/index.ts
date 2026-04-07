@@ -65,7 +65,7 @@ export const CREDENTIAL_GROUPS = [
 ]
 
 export type UrgencyLevel = 'routine' | 'urgent' | 'emergency'
-export type CaseStatus = 'open' | 'matching' | 'matched' | 'assigned' | 'completed' | 'cancelled'
+export type CaseStatus = 'lead' | 'open' | 'matching' | 'matched' | 'assigned' | 'on_hold' | 'completed' | 'cancelled'
 export type ProviderStatus = 'active' | 'inactive' | 'suspended'
 export type ScheduleType = 'one_time' | 'recurring' | 'flexible'
 export type GenderPref = 'any' | 'male' | 'female'
@@ -120,6 +120,9 @@ export interface Case {
   special_instructions: string|null; status: CaseStatus
   assigned_provider_id: string|null
   dispatched_at: string|null
+  // ── v2.7.11: Vita lead integration ──
+  vita_lead_id: string|null; vita_lead_status: string|null
+  vita_lead_synced_at: string|null; allow_pre_dispatch: boolean
   created_at: string; updated_at: string
   clients?: Client; providers?: Provider
 }

@@ -13,13 +13,14 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
 
   const { data: allCases } = await db
     .from('cases')
-    .select('id,title,care_level,urgency,status,created_at,dispatched_at,assigned_at,closed_at,hold_reason,clients(name,city,state),providers(name)')
+    .select('id,title,care_level,urgency,status,created_at,dispatched_at,assigned_at,closed_at,hold_reason,vita_lead_id,vita_lead_status,vita_lead_synced_at,allow_pre_dispatch,clients(name,city,state),providers(name)')
     .order('created_at', { ascending: false })
 
   const cases = allCases ?? []
 
   // Group by tab
   const tabs = {
+    leads:    cases.filter(c => c.status === 'lead'),
     active:   cases.filter(c => ['open','matching','matched'].includes(c.status)),
     assigned: cases.filter(c => c.status === 'assigned'),
     on_hold:  cases.filter(c => c.status === 'on_hold'),
@@ -38,7 +39,7 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
     <>
       <PageHeader
         title="Cases"
-        subtitle={`${cases.length} total · ${tabs.active.length} active`}
+        subtitle={`${cases.length} total · ${tabs.active.length} active${tabs.leads.length > 0 ? ` · ${tabs.leads.length} leads from Vita` : ''}`}
         breadcrumbs={[{ label: 'Cases' }]}
         actions={
           <Link href="/cases/new">
@@ -48,14 +49,25 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
       />
       <div style={{ padding:'0 28px 28px' }}>
         <CaseTabs
-          counts={{ active: tabs.active.length, assigned: tabs.assigned.length, on_hold: tabs.on_hold.length, closed: tabs.closed.length }}
+          counts={{ leads: tabs.leads.length, active: tabs.active.length, assigned: tabs.assigned.length, on_hold: tabs.on_hold.length, closed: tabs.closed.length }}
           activeTab={tab}
         />
 
+        {/* Banner explaining the Leads tab when first viewed */}
+        {tab === 'leads' && tabs.leads.length > 0 && (
+          <div style={{ background:'#FAF5FF', border:'1px solid #E9D5FF', borderRadius:10, padding:'12px 16px', marginBottom:16, display:'flex', alignItems:'flex-start', gap:12 }}>
+            <span style={{ fontSize:18, color:'#A855F7' }}>💡</span>
+            <div style={{ fontSize:12.5, color:'#6B21A8', lineHeight:1.5 }}>
+              <strong>Pre-matching workspace.</strong> These are leads imported from Vita. You can run the matching engine on any of them to identify candidate providers, but dispatch is locked until the lead is closed (won) in Vita — or until you explicitly enable pre-dispatch on a specific case.
+            </div>
+          </div>
+        )}
+
         {currentCases.length === 0 ? (
           <div className="card" style={{ padding:'48px', textAlign:'center', color:'var(--muted)', border:'2px dashed var(--border)', background:'transparent', boxShadow:'none' }}>
-            <div style={{ fontSize:28, marginBottom:10 }}>◈</div>
-            <div style={{ fontWeight:600, fontSize:15, marginBottom:6, color:'var(--text)' }}>No {tab} cases</div>
+            <div style={{ fontSize:28, marginBottom:10 }}>{tab === 'leads' ? '💼' : '◈'}</div>
+            <div style={{ fontWeight:600, fontSize:15, marginBottom:6, color:'var(--text)' }}>No {tab === 'leads' ? 'leads' : tab + ' cases'}</div>
+            {tab === 'leads' && <div style={{ fontSize:12.5, color:'var(--muted)' }}>Leads will appear here automatically as they're created in Vita.</div>}
             {tab === 'active' && <Link href="/cases/new"><button className="btn-primary" style={{ marginTop:12 }}>Open First Case</button></Link>}
           </div>
         ) : (
@@ -67,10 +79,11 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
                   <th>Care Level</th>
                   <th>Client</th>
                   <th>Status</th>
+                  {tab === 'leads' && <th>Vita Stage</th>}
                   {tab === 'assigned' && <th>Provider</th>}
                   {tab === 'on_hold' && <th>Hold Reason</th>}
                   {tab === 'closed' && <th>Closed</th>}
-                  <th>Opened</th>
+                  <th>{tab === 'leads' ? 'Synced' : 'Opened'}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -86,6 +99,7 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
                         <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
                           {c.urgency?.toUpperCase()}
                           {c.dispatched_at && <span style={{ marginLeft:6, color:'var(--teal)' }}>· 📤 Dispatched</span>}
+                          {c.allow_pre_dispatch && c.status === 'lead' && <span style={{ marginLeft:6, color:'#A855F7' }}>· 🔓 Pre-dispatch enabled</span>}
                         </div>
                       </td>
                       <td style={{ fontSize:12.5, color:'var(--muted)' }}>{CARE_LABELS[c.care_level] ?? c.care_level ?? '—'}</td>
@@ -95,6 +109,11 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
                           {cfg?.label ?? c.status}
                         </span>
                       </td>
+                      {tab === 'leads' && (
+                        <td style={{ fontSize:12, color:'var(--muted)', textTransform:'capitalize' }}>
+                          {c.vita_lead_status?.replace(/_/g, ' ') ?? '—'}
+                        </td>
+                      )}
                       {tab === 'assigned' && <td style={{ fontSize:13 }}>{provider?.name ?? '—'}</td>}
                       {tab === 'on_hold' && (
                         <td style={{ fontSize:12, color:'#92400E' }}>{c.hold_reason?.replace(/_/g,' ') ?? '—'}</td>
@@ -104,7 +123,11 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
                           {c.closed_at ? new Date(c.closed_at).toLocaleDateString() : '—'}
                         </td>
                       )}
-                      <td style={{ fontSize:12, color:'var(--muted)' }}>{new Date(c.created_at).toLocaleDateString()}</td>
+                      <td style={{ fontSize:12, color:'var(--muted)' }}>
+                        {tab === 'leads'
+                          ? (c.vita_lead_synced_at ? new Date(c.vita_lead_synced_at).toLocaleDateString() : '—')
+                          : new Date(c.created_at).toLocaleDateString()}
+                      </td>
                       <td><Link href={`/cases/${c.id}`}><button className="btn-secondary" style={{ fontSize:12, padding:'4px 12px' }}>View →</button></Link></td>
                     </tr>
                   )

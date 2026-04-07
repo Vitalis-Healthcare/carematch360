@@ -13,6 +13,8 @@ interface Props {
   caseId: string
   matches: Match[]
   onDispatched: () => void
+  caseStatus?: string
+  allowPreDispatch?: boolean
 }
 
 const CHANNELS = [
@@ -23,7 +25,7 @@ const CHANNELS = [
 // Confirm before dispatching to more than this many providers at once.
 const CONFIRM_THRESHOLD = 5
 
-export default function DispatchPanel({ caseId, matches, onDispatched }: Props) {
+export default function DispatchPanel({ caseId, matches, onDispatched, caseStatus, allowPreDispatch: initialAllow }: Props) {
   // IMPORTANT: default selection is EMPTY. The previous default of "all
   // un-notified providers" caused accidental mass dispatches when
   // operators clicked rows thinking they were *adding* providers when
@@ -33,6 +35,45 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
   const [dispatching, setDispatching] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<any>(null)
+
+  // Lead-gate state — silent dispatch by default for cases imported from
+  // Vita (status='lead'). Coordinator can flip the per-case toggle to
+  // enable dispatch on high-confidence leads.
+  const [allowPreDispatch, setAllowPreDispatch] = useState<boolean>(initialAllow ?? false)
+  const [togglingPreDispatch, setTogglingPreDispatch] = useState(false)
+  const isLead = caseStatus === 'lead'
+  const dispatchLocked = isLead && !allowPreDispatch
+
+  async function togglePreDispatch() {
+    const next = !allowPreDispatch
+    if (next) {
+      const ok = window.confirm(
+        'Enable pre-dispatch on this lead?\n\n' +
+        'This will let you notify providers about a case that hasn\'t closed yet in Vita. ' +
+        'Use only for high-confidence leads — dispatched providers may be disappointed if the deal falls through.\n\n' +
+        'Continue?'
+      )
+      if (!ok) return
+    }
+    setTogglingPreDispatch(true)
+    try {
+      const res = await fetch(`/api/cases/${caseId}/pre-dispatch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allow: next }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        setError(j.error || 'Failed to update pre-dispatch flag')
+        return
+      }
+      setAllowPreDispatch(next)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setTogglingPreDispatch(false)
+    }
+  }
 
   const toggleProvider = (id: string) => setSelectedIds(prev => {
     const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s
@@ -53,6 +94,10 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
   const clearAll = () => setSelectedIds(new Set())
 
   async function handleDispatch() {
+    if (dispatchLocked) {
+      setError('Dispatch is locked on lead-status cases. Enable pre-dispatch above to override.')
+      return
+    }
     if (!selectedIds.size)  { setError('Select at least one provider'); return }
     if (!channels.size)     { setError('Select at least one channel'); return }
 
@@ -119,6 +164,56 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
       </div>
 
       <div style={{ padding: '20px 24px' }}>
+        {/* Lead-gate banner — shown when this case is a draft from Vita */}
+        {isLead && (
+          <div style={{
+            border: `1px solid ${dispatchLocked ? '#E9D5FF' : '#FED7AA'}`,
+            background: dispatchLocked ? '#FAF5FF' : '#FFF7ED',
+            borderRadius: 10,
+            padding: '14px 16px',
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 12,
+          }}>
+            <span style={{ fontSize: 20 }}>{dispatchLocked ? '🔒' : '🔓'}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: dispatchLocked ? '#6B21A8' : '#9A3412' }}>
+                {dispatchLocked ? 'Dispatch is locked' : 'Pre-dispatch enabled'}
+              </div>
+              <div style={{ fontSize: 12, color: dispatchLocked ? '#7E22CE' : '#C2410C', marginTop: 4, lineHeight: 1.5 }}>
+                {dispatchLocked
+                  ? <>This case is a lead from Vita. You can run matching to identify candidate providers, but you can't notify them until the lead is closed (won) in Vita — or you enable pre-dispatch below.</>
+                  : <>Notifications will be sent to providers even though this lead hasn't closed in Vita. Use sparingly — providers may be disappointed if the deal falls through.</>
+                }
+              </div>
+              <button
+                type="button"
+                onClick={togglePreDispatch}
+                disabled={togglingPreDispatch}
+                style={{
+                  marginTop: 10,
+                  padding: '6px 14px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: `1.5px solid ${dispatchLocked ? '#A855F7' : '#EA580C'}`,
+                  background: '#fff',
+                  color: dispatchLocked ? '#A855F7' : '#EA580C',
+                  borderRadius: 7,
+                  cursor: togglingPreDispatch ? 'wait' : 'pointer',
+                  opacity: togglingPreDispatch ? 0.6 : 1,
+                }}
+              >
+                {togglingPreDispatch
+                  ? '…'
+                  : dispatchLocked
+                    ? '🔓 Enable pre-dispatch on this case'
+                    : '🔒 Disable pre-dispatch (return to silent mode)'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Success banner with per-provider breakdown */}
         {result && (
           <div style={{ border: '1px solid #A7F3D0', borderRadius: 8, marginBottom: 16, overflow: 'hidden' }}>
@@ -272,14 +367,16 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
 
         {/* Dispatch button */}
         <button type="button" onClick={handleDispatch}
-          disabled={dispatching || !selectedIds.size || !channels.size}
+          disabled={dispatching || !selectedIds.size || !channels.size || dispatchLocked}
           className="btn-primary"
-          style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: 14, marginTop: 4 }}>
+          style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: 14, marginTop: 4, opacity: dispatchLocked ? 0.5 : 1 }}>
           {dispatching
             ? 'Sending...'
-            : selectedIds.size === 0
-              ? 'Select providers above to dispatch'
-              : `Send to ${selectedIds.size} Provider${selectedIds.size !== 1 ? 's' : ''} via ${[...channels].join(' + ').toUpperCase()}`}
+            : dispatchLocked
+              ? '🔒 Dispatch locked — case is in lead status'
+              : selectedIds.size === 0
+                ? 'Select providers above to dispatch'
+                : `Send to ${selectedIds.size} Provider${selectedIds.size !== 1 ? 's' : ''} via ${[...channels].join(' + ').toUpperCase()}`}
         </button>
       </div>
     </div>

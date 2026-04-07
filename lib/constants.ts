@@ -15,8 +15,9 @@ export const HOLD_REASONS = [
 
 // ── Case status config ────────────────────────────────────────
 export const CASE_STATUS_CONFIG: Record<string, {
-  label: string; color: string; bg: string; tab: 'active'|'assigned'|'on_hold'|'closed'
+  label: string; color: string; bg: string; tab: 'leads'|'active'|'assigned'|'on_hold'|'closed'
 }> = {
+  lead:      { label: 'Lead',       color: '#A855F7', bg: '#FAF5FF',  tab: 'leads'    },
   open:      { label: 'Open',       color: '#0EA5E9', bg: '#EFF6FF',  tab: 'active'   },
   matching:  { label: 'Matching',   color: '#8B5CF6', bg: '#F5F3FF',  tab: 'active'   },
   matched:   { label: 'Matched',    color: '#F59E0B', bg: '#FFFBEB',  tab: 'active'   },
