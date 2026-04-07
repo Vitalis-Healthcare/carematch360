@@ -20,10 +20,15 @@ const CHANNELS = [
   { key: 'sms',   label: 'SMS',   icon: '📱', desc: 'Short message + response link' },
 ]
 
+// Confirm before dispatching to more than this many providers at once.
+const CONFIRM_THRESHOLD = 5
+
 export default function DispatchPanel({ caseId, matches, onDispatched }: Props) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    new Set(matches.filter(m => !m.notified_at).map(m => m.provider_id))
-  )
+  // IMPORTANT: default selection is EMPTY. The previous default of "all
+  // un-notified providers" caused accidental mass dispatches when
+  // operators clicked rows thinking they were *adding* providers when
+  // they were actually *removing* them from the all-checked state.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [channels, setChannels] = useState<Set<string>>(new Set(['email']))
   const [dispatching, setDispatching] = useState(false)
   const [error, setError] = useState('')
@@ -39,9 +44,26 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
   const unnotified = matches.filter(m => !m.notified_at)
   const notified   = matches.filter(m => m.notified_at)
 
+  // Quick-select helpers — operate on the un-notified pool, sorted by score.
+  // (matches arrive pre-sorted by match_score desc from the API.)
+  const selectTopN = (n: number) => {
+    setSelectedIds(new Set(unnotified.slice(0, n).map(m => m.provider_id)))
+  }
+  const selectAll = () => setSelectedIds(new Set(unnotified.map(m => m.provider_id)))
+  const clearAll = () => setSelectedIds(new Set())
+
   async function handleDispatch() {
     if (!selectedIds.size)  { setError('Select at least one provider'); return }
     if (!channels.size)     { setError('Select at least one channel'); return }
+
+    // Confirmation gate — anything beyond a small batch needs explicit
+    // acknowledgement of the count and channels.
+    if (selectedIds.size > CONFIRM_THRESHOLD) {
+      const channelList = [...channels].map(c => c.toUpperCase()).join(' + ')
+      const msg = `You are about to send ${selectedIds.size} ${channelList} notification${selectedIds.size === 1 ? '' : 's'} to ${selectedIds.size} provider${selectedIds.size === 1 ? '' : 's'}.\n\nThis cannot be undone. Continue?`
+      if (!window.confirm(msg)) return
+    }
+
     setDispatching(true); setError('')
     try {
       const res = await fetch(`/api/cases/${caseId}/dispatch`, {
@@ -55,9 +77,29 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Dispatch failed')
       setResult(json)
+      setSelectedIds(new Set()) // clear after successful send
       onDispatched()
     } catch (err: any) { setError(err.message) } finally { setDispatching(false) }
   }
+
+  // Style helper for the quick-select buttons.
+  const quickBtn = (active = false): React.CSSProperties => ({
+    fontSize: 12,
+    fontWeight: 600,
+    padding: '6px 12px',
+    borderRadius: 6,
+    border: `1px solid ${active ? 'var(--teal)' : 'var(--border)'}`,
+    background: active ? 'var(--teal-light)' : 'var(--surface)',
+    color: active ? 'var(--navy)' : 'var(--text)',
+    cursor: 'pointer',
+    transition: 'all 0.1s',
+  })
+
+  // Color the count display based on how many are selected.
+  const countColor =
+    selectedIds.size === 0 ? 'var(--muted)' :
+    selectedIds.size > 10  ? 'var(--amber)' :
+    'var(--teal)'
 
   return (
     <div className="card" style={{ overflow: 'hidden' }}>
@@ -87,7 +129,6 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
                 {result.failed > 0 && <span style={{ color: '#DC2626', fontWeight: 600 }}> · {result.failed} failed</span>}
               </span>
             </div>
-            {/* Per-provider breakdown */}
             {(result.results || []).map((r: any) => (
               <div key={r.providerId} style={{ borderTop: '1px solid #D1FAE5', padding: '8px 14px', background: '#fff' }}>
                 <div style={{ fontWeight: 500, fontSize: 12, marginBottom: 4 }}>{r.providerName}</div>
@@ -142,17 +183,49 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
         {/* Provider list */}
         {unnotified.length > 0 && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Select Providers ({selectedIds.size}/{unnotified.length})
+            {/* Quick-select toolbar */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 12, padding: '12px 14px', borderRadius: 8,
+              background: 'var(--bg)', border: '1px solid var(--border)',
+              flexWrap: 'wrap', gap: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{
+                  fontSize: 22, fontWeight: 700, fontFamily: 'var(--mono)',
+                  color: countColor, lineHeight: 1,
+                }}>
+                  {selectedIds.size}
+                </span>
+                <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+                  of {unnotified.length} selected
+                </span>
+                {selectedIds.size > 10 && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 600, color: 'var(--amber)',
+                    background: '#FEF3C7', border: '1px solid #FDE68A',
+                    borderRadius: 10, padding: '2px 8px', marginLeft: 4,
+                  }}>
+                    ⚠ large batch
+                  </span>
+                )}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => setSelectedIds(new Set(unnotified.map(m => m.provider_id)))}
-                  style={{ fontSize: 11, color: 'var(--teal)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>All</button>
-                <button type="button" onClick={() => setSelectedIds(new Set())}
-                  style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer' }}>None</button>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => selectTopN(5)}
+                  style={quickBtn()} disabled={unnotified.length === 0}>Top 5</button>
+                <button type="button" onClick={() => selectTopN(10)}
+                  style={quickBtn()} disabled={unnotified.length === 0}>Top 10</button>
+                <button type="button" onClick={selectAll}
+                  style={quickBtn()} disabled={unnotified.length === 0}>All</button>
+                <button type="button" onClick={clearAll}
+                  style={quickBtn()} disabled={selectedIds.size === 0}>Clear</button>
               </div>
             </div>
+
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+              Available Providers
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {unnotified.map((m, i) => {
                 const p = m.providers
@@ -178,8 +251,8 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                      {hasEmail && <span style={{ fontSize: 10, padding: '1px 6px', background: hasEmail ? '#ECFDF5' : 'var(--bg)', color: hasEmail ? '#065F46' : 'var(--subtle)', borderRadius: 4 }}>✉</span>}
-                      {hasPhone && <span style={{ fontSize: 10, padding: '1px 6px', background: hasPhone ? '#EFF6FF' : 'var(--bg)', color: hasPhone ? '#1D4ED8' : 'var(--subtle)', borderRadius: 4 }}>📱</span>}
+                      {hasEmail && <span style={{ fontSize: 10, padding: '1px 6px', background: '#ECFDF5', color: '#065F46', borderRadius: 4 }}>✉</span>}
+                      {hasPhone && <span style={{ fontSize: 10, padding: '1px 6px', background: '#EFF6FF', color: '#1D4ED8', borderRadius: 4 }}>📱</span>}
                       {!hasEmail && channels.has('email') && <span style={{ fontSize: 10, color: 'var(--red)', padding: '1px 6px' }}>no email</span>}
                       {!hasPhone && channels.has('sms') && <span style={{ fontSize: 10, color: 'var(--amber)', padding: '1px 6px' }}>no phone</span>}
                     </div>
@@ -204,7 +277,9 @@ export default function DispatchPanel({ caseId, matches, onDispatched }: Props) 
           style={{ width: '100%', justifyContent: 'center', padding: '12px', fontSize: 14, marginTop: 4 }}>
           {dispatching
             ? 'Sending...'
-            : `Send to ${selectedIds.size} Provider${selectedIds.size !== 1 ? 's' : ''} via ${[...channels].join(' + ').toUpperCase()}`}
+            : selectedIds.size === 0
+              ? 'Select providers above to dispatch'
+              : `Send to ${selectedIds.size} Provider${selectedIds.size !== 1 ? 's' : ''} via ${[...channels].join(' + ').toUpperCase()}`}
         </button>
       </div>
     </div>

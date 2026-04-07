@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { sendEmailDispatch, sendSmsDispatch, buildScheduleDesc, DispatchPayload } from '@/lib/dispatch'
 
+// Server-side circuit breaker. Even if a future UI bug tries to fire
+// hundreds of notifications at once, the API stops it here. Sized
+// generously above the matching cap (20) to allow some flexibility.
+const MAX_DISPATCH_PER_REQUEST = 25
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -11,6 +16,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (!providerIds?.length) return NextResponse.json({ error: 'No providers selected' }, { status: 400 })
     if (!channels?.length)    return NextResponse.json({ error: 'No channels selected' }, { status: 400 })
+
+    if (providerIds.length > MAX_DISPATCH_PER_REQUEST) {
+      return NextResponse.json({
+        error: `Safety limit: cannot dispatch to more than ${MAX_DISPATCH_PER_REQUEST} providers in a single request. You requested ${providerIds.length}. Please select fewer providers and try again.`,
+      }, { status: 400 })
+    }
 
     const db = createServiceClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://carematch360.vercel.app'

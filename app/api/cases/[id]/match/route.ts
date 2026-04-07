@@ -3,6 +3,10 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { runMatchingEngine } from '@/lib/matching'
 import { CareLevel } from '@/types'
 
+// Cap the matching results so the dispatch panel stays focused on the
+// best candidates instead of every eligible provider in the network.
+const MAX_MATCHES = 20
+
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -34,7 +38,29 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       requires_spanish: caseData.requires_spanish,
     }
 
-    const results = runMatchingEngine(providers ?? [], matchInput)
+    // Run engine on the full provider pool, then cap to the top N for dispatch.
+    const allResults = runMatchingEngine(providers ?? [], matchInput)
+    const eligibleTotal = allResults.length
+    const results = allResults.slice(0, MAX_MATCHES)
+
+    // Clean up stale pending matches from previous runs that didn't make
+    // the new top N. We only delete rows that are still 'pending' AND
+    // never got notified — anything that's been dispatched, accepted,
+    // or declined is left alone.
+    const keepIds = new Set(results.map(r => r.provider_id))
+    const { data: existingPending } = await db.from('case_matches')
+      .select('id, provider_id')
+      .eq('case_id', id)
+      .eq('status', 'pending')
+      .is('notified_at', null)
+
+    const toDeleteIds = (existingPending ?? [])
+      .filter(m => !keepIds.has(m.provider_id))
+      .map(m => m.id)
+
+    if (toDeleteIds.length > 0) {
+      await db.from('case_matches').delete().in('id', toDeleteIds)
+    }
 
     if (results.length > 0) {
       await db.from('case_matches').upsert(
@@ -63,7 +89,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         is_available: r.is_available, match_notes: r.match_notes,
         status: 'pending', providers: r.provider,
       })),
-      total: results.length, case_id: id, care_level: careLevel,
+      total: results.length,
+      eligible_total: eligibleTotal,
+      max_matches: MAX_MATCHES,
+      case_id: id,
+      care_level: careLevel,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
