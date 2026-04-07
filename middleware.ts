@@ -4,6 +4,9 @@ const PUBLIC_PATHS = [
   '/login', '/provider/login', '/auth/verify', '/api/auth/',
   '/getcare', '/apply', '/respond', '/api/respond',
   '/api/clients/inquire', '/api/providers/apply', '/thank-you',
+  // ── v2.7.11a: webhook endpoints are authenticated by HMAC signature,
+  // not by session cookie, so they need to bypass the auth middleware ──
+  '/api/webhooks/',
   '/_next', '/favicon',
 ]
 
