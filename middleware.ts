@@ -7,6 +7,9 @@ const PUBLIC_PATHS = [
   // ── v2.7.11a: webhook endpoints are authenticated by HMAC signature,
   // not by session cookie, so they need to bypass the auth middleware ──
   '/api/webhooks/',
+  // ── v2.7.12a: public compliance pages for A2P 10DLC (Twilio) —
+  // must be reachable by TCR reviewers without a login. ──
+  '/privacy', '/sms-terms',
   '/_next', '/favicon',
 ]
 
