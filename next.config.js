@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    outputFileTracingIncludes: {
+      '/api/providers/apply': ['./public/fonts/**/*', './public/branding/**/*'],
+    },
+  },
   async headers() {
     return [
       {
