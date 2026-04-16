@@ -75,9 +75,11 @@ export default function ProviderForm({ provider, mode }: Props) {
   const primaryCred = provider?.credential_type
 
   // Group skills for display
+  // ── v2.7.13: added "Personal Care & ADLs" group between Specialties and Mobility ──
   const SKILL_GROUPS = [
     { label: 'Clinical Skills', items: ['Vent Care','Trach Care','Wound Care','G-Tube','IV Therapy','Catheter Care','Colostomy Care','Feeding Tube','Oxygen Therapy','Medication Management','Vital Signs'] },
     { label: 'Specialties', items: ['Pediatrics','Geriatrics','Dementia Care',"Alzheimer's",'Behavioral Health','Autism','Developmental Disabilities','Hospice / Palliative','Oncology','Cardiac Care','Diabetes Management','Stroke Recovery','Post-Surgical','Orthopedic','Spinal care'] },
+    { label: 'Personal Care & ADLs', items: ['Bathing assistance (tub/shower)','Bedpan / commode assistance','Incontinence care','Peri care','Feeding assistance','Dressing assistance','Oral hygiene & grooming','Turn & reposition','Range of motion exercises','General ADL assistance'] },
     { label: 'Mobility & Care Attributes', items: ['Total care','Wheelchair transfer','Hoyer lift','Fall prevention','Ambulation assist','Transfer assist'] },
     { label: 'Languages & Transport', items: ['Spanish speaking','French speaking','Sign language','Has a car'] },
     { label: 'Nutrition', items: ['Meal preparation'] },
