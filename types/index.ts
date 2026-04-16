@@ -134,12 +134,17 @@ export interface CaseDocument {
 }
 
 // Skills pool — unified clinical skills + attributes
+// ── v2.7.13: added 10 "Personal Care & ADLs" items from Vitalis Plan of Care ──
 export const ALL_SKILLS = [
   'Vent Care','Trach Care','Wound Care','G-Tube','IV Therapy','Catheter Care',
   'Colostomy Care','Feeding Tube','Oxygen Therapy','Medication Management','Vital Signs',
   'Pediatrics','Geriatrics','Dementia Care',"Alzheimer's",'Behavioral Health',
   'Autism','Developmental Disabilities','Hospice / Palliative','Oncology',
   'Cardiac Care','Diabetes Management','Stroke Recovery','Post-Surgical','Orthopedic',
+  // Personal Care & ADLs (v2.7.13)
+  'Bathing assistance (tub/shower)','Bedpan / commode assistance','Incontinence care',
+  'Peri care','Feeding assistance','Dressing assistance','Oral hygiene & grooming',
+  'Turn & reposition','Range of motion exercises','General ADL assistance',
   'Has a car','Meal preparation','Total care','Wheelchair transfer','Hoyer lift',
   'Spanish speaking','French speaking','Sign language',
   'Fall prevention','Ambulation assist','Transfer assist','Spinal care',

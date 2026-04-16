@@ -683,33 +683,48 @@ const HTML = `<!DOCTYPE html>
     <div class="panel-body">
       <div class="section-label">Clinical Skills</div>
       <div class="chips" id="skill-chips">
-        <div class="chip" data-val="vent_care">Vent Care</div>
-        <div class="chip" data-val="trach_care">Trach Care</div>
-        <div class="chip" data-val="wound_care">Wound Care</div>
-        <div class="chip" data-val="g_tube">G-Tube</div>
-        <div class="chip" data-val="iv_therapy">IV Therapy</div>
-        <div class="chip" data-val="catheter_care">Catheter Care</div>
-        <div class="chip" data-val="colostomy">Colostomy Care</div>
-        <div class="chip" data-val="feeding_tube">Feeding Tube</div>
-        <div class="chip" data-val="oxygen_therapy">Oxygen Therapy</div>
-        <div class="chip" data-val="medication_management">Medication Management</div>
-        <div class="chip" data-val="vital_signs">Vital Signs</div>
+        <div class="chip" data-val="Vent Care">Vent Care</div>
+        <div class="chip" data-val="Trach Care">Trach Care</div>
+        <div class="chip" data-val="Wound Care">Wound Care</div>
+        <div class="chip" data-val="G-Tube">G-Tube</div>
+        <div class="chip" data-val="IV Therapy">IV Therapy</div>
+        <div class="chip" data-val="Catheter Care">Catheter Care</div>
+        <div class="chip" data-val="Colostomy Care">Colostomy Care</div>
+        <div class="chip" data-val="Feeding Tube">Feeding Tube</div>
+        <div class="chip" data-val="Oxygen Therapy">Oxygen Therapy</div>
+        <div class="chip" data-val="Medication Management">Medication Management</div>
+        <div class="chip" data-val="Vital Signs">Vital Signs</div>
       </div>
       <div class="section-label">Specialties</div>
       <div class="chips" id="specialty-chips">
-        <div class="chip" data-val="pediatrics">Pediatrics</div>
-        <div class="chip" data-val="geriatrics">Geriatrics</div>
-        <div class="chip" data-val="dementia_care">Dementia Care</div>
-        <div class="chip" data-val="alzheimers">Alzheimer's</div>
-        <div class="chip" data-val="behavioral_health">Behavioral Health</div>
-        <div class="chip" data-val="autism">Autism</div>
-        <div class="chip" data-val="developmental_disabilities">Developmental Disabilities</div>
-        <div class="chip" data-val="hospice_palliative">Hospice / Palliative</div>
-        <div class="chip" data-val="oncology">Oncology</div>
-        <div class="chip" data-val="cardiac_care">Cardiac Care</div>
-        <div class="chip" data-val="diabetes_management">Diabetes Management</div>
-        <div class="chip" data-val="stroke_recovery">Stroke Recovery</div>
-        <div class="chip" data-val="post_surgical">Post-Surgical</div>
+        <div class="chip" data-val="Pediatrics">Pediatrics</div>
+        <div class="chip" data-val="Geriatrics">Geriatrics</div>
+        <div class="chip" data-val="Dementia Care">Dementia Care</div>
+        <div class="chip" data-val="Alzheimer's">Alzheimer's</div>
+        <div class="chip" data-val="Behavioral Health">Behavioral Health</div>
+        <div class="chip" data-val="Autism">Autism</div>
+        <div class="chip" data-val="Developmental Disabilities">Developmental Disabilities</div>
+        <div class="chip" data-val="Hospice / Palliative">Hospice / Palliative</div>
+        <div class="chip" data-val="Oncology">Oncology</div>
+        <div class="chip" data-val="Cardiac Care">Cardiac Care</div>
+        <div class="chip" data-val="Diabetes Management">Diabetes Management</div>
+        <div class="chip" data-val="Stroke Recovery">Stroke Recovery</div>
+        <div class="chip" data-val="Post-Surgical">Post-Surgical</div>
+        <div class="chip" data-val="Orthopedic">Orthopedic</div>
+        <div class="chip" data-val="Spinal care">Spinal care</div>
+      </div>
+      <div class="section-label">Personal Care &amp; ADLs</div>
+      <div class="chips" id="adl-chips">
+        <div class="chip" data-val="Bathing assistance (tub/shower)">Bathing assistance (tub/shower)</div>
+        <div class="chip" data-val="Bedpan / commode assistance">Bedpan / commode assistance</div>
+        <div class="chip" data-val="Incontinence care">Incontinence care</div>
+        <div class="chip" data-val="Peri care">Peri care</div>
+        <div class="chip" data-val="Feeding assistance">Feeding assistance</div>
+        <div class="chip" data-val="Dressing assistance">Dressing assistance</div>
+        <div class="chip" data-val="Oral hygiene &amp; grooming">Oral hygiene &amp; grooming</div>
+        <div class="chip" data-val="Turn &amp; reposition">Turn &amp; reposition</div>
+        <div class="chip" data-val="Range of motion exercises">Range of motion exercises</div>
+        <div class="chip" data-val="General ADL assistance">General ADL assistance</div>
       </div>
       <div class="section-label">Capabilities & Attributes</div>
       <div class="toggles">
@@ -743,6 +758,14 @@ const HTML = `<!DOCTYPE html>
           <div class="toggle-dot"></div>
           <div class="toggle-text">🤲 Total care<small>Full ADL/personal care</small></div>
         </div>
+      </div>
+      <div class="section-label">Other Languages &amp; Mobility</div>
+      <div class="chips" id="extra-chips">
+        <div class="chip" data-val="French speaking">French speaking</div>
+        <div class="chip" data-val="Sign language">Sign language</div>
+        <div class="chip" data-val="Fall prevention">Fall prevention</div>
+        <div class="chip" data-val="Ambulation assist">Ambulation assist</div>
+        <div class="chip" data-val="Transfer assist">Transfer assist</div>
       </div>
       <div class="section-label">Additional Information</div>
       <div class="field">
@@ -852,6 +875,8 @@ initChips('day-chips', 'days', false)
 initChips('shift-chips', 'shifts', false)
 initChips('skill-chips', 'skills', false)
 initChips('specialty-chips', 'skills', false)
+initChips('adl-chips', 'skills', false)
+initChips('extra-chips', 'skills', false)
 
 function toggleItem(el, field) {
   el.classList.toggle('on')
