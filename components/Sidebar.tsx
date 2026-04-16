@@ -2,9 +2,9 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-interface SidebarProps { role?: string; userName?: string }
+interface SidebarProps { role?: string; userName?: string; emailFailureCount?: number }
 
-export default function Sidebar({ role = 'coordinator', userName = '' }: SidebarProps) {
+export default function Sidebar({ role = 'coordinator', userName = '', emailFailureCount = 0 }: SidebarProps) {
   const path = usePathname()
   const isActive = (href: string) => path === href || path.startsWith(href + '/')
 
@@ -24,13 +24,24 @@ export default function Sidebar({ role = 'coordinator', userName = '' }: Sidebar
       textDecoration:'none', transition:'all 0.15s',
       borderLeft: active ? '2px solid #0E9FA3' : '2px solid transparent',
     }),
+    labelWrap: { flex:1, display:'flex', alignItems:'center', justifyContent:'space-between', gap:6 },
+    badge: { background:'#DC2626', color:'#fff', fontSize:10, fontWeight:700, padding:'1px 7px', borderRadius:10, minWidth:18, textAlign:'center' as const, lineHeight:1.4 },
     footer: { padding:'14px 14px 18px', borderTop:'1px solid rgba(255,255,255,0.08)' },
     userBox: { fontSize:12, color:'rgba(255,255,255,0.5)', marginBottom:10, lineHeight:1.4 },
     userName: { color:'rgba(255,255,255,0.85)', fontWeight:600, fontSize:12.5 },
     roleBadge: { fontSize:10.5, color: role==='admin'?'#FCD34D':'rgba(255,255,255,0.4)', fontWeight:600, textTransform:'uppercase' as const, letterSpacing:'0.04em' },
   }
 
-  const navItems = [
+  // Admin section items — email-failures slots in between Users and Geocode
+  // so the "alerty" entry sits near the top of admin visibility.
+  type NavItem = { href: string; icon: string; label: string; badge?: number }
+  const adminItems: NavItem[] = [
+    { href:'/admin/users', icon:'👥', label:'Users' },
+    { href:'/admin/email-failures', icon:'📧', label:'Email failures', badge: emailFailureCount },
+    { href:'/admin/geocode', icon:'📍', label:'Geocode Addresses' },
+  ]
+
+  const navItems: { section: string; items: NavItem[] }[] = [
     { section:'OVERVIEW', items:[
       { href:'/dashboard', icon:'🏠', label:'Dashboard' },
       { href:'/analytics', icon:'📊', label:'Analytics' },
@@ -47,10 +58,7 @@ export default function Sidebar({ role = 'coordinator', userName = '' }: Sidebar
     { section:'INTEGRATIONS', items:[
       { href:'/axiscare', icon:'↓', label:'AxisCare Import' },
     ]},
-    ...(role === 'admin' ? [{ section:'ADMIN', items:[
-      { href:'/admin/users', icon:'👥', label:'Users' },
-      { href:'/admin/geocode', icon:'📍', label:'Geocode Addresses' },
-    ]}] : []),
+    ...(role === 'admin' ? [{ section:'ADMIN', items: adminItems }] : []),
   ]
 
   return (
@@ -65,12 +73,18 @@ export default function Sidebar({ role = 'coordinator', userName = '' }: Sidebar
         {navItems.map(group => (
           <div key={group.section}>
             <div style={S.section}>{group.section}</div>
-            {group.items.map(item => (
-              <Link key={item.href} href={item.href} style={S.link(isActive(item.href))}>
-                <span style={{ fontSize:14 }}>{item.icon}</span>
-                {item.label}
-              </Link>
-            ))}
+            {group.items.map(item => {
+              const showBadge = typeof item.badge === 'number' && item.badge > 0
+              return (
+                <Link key={item.href} href={item.href} style={S.link(isActive(item.href))}>
+                  <span style={{ fontSize:14 }}>{item.icon}</span>
+                  <span style={S.labelWrap}>
+                    <span>{item.label}</span>
+                    {showBadge && <span style={S.badge}>{item.badge}</span>}
+                  </span>
+                </Link>
+              )
+            })}
           </div>
         ))}
       </nav>
