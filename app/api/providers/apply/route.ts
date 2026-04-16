@@ -1,15 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { renderApplyNotificationHtml } from '@/lib/email/apply-notification-html'
-import { ApplyNotificationPdf } from '@/lib/email/apply-notification-pdf'
+import {
+  ApplyNotificationPdf,
+  type FontBundle,
+} from '@/lib/email/apply-notification-pdf'
 import type { ApplicantData } from '@/lib/email/types'
 import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer'
 import React from 'react'
-import { readFile } from 'fs/promises'
-import { join } from 'path'
+import { readFileSync } from 'fs'
+import path from 'path'
 
-export const runtime = 'nodejs' // @react-pdf/renderer requires Node, not Edge
-export const maxDuration = 30   // PDF + font fetch can take a few seconds on cold start
+export const runtime = 'nodejs'
+export const maxDuration = 30
+
+// ──────────────────────────────────────────────────────────────
+// Asset loading
+//
+// We use static path.resolve(process.cwd(), 'public', ...) calls
+// at module load so Vercel's Node File Trace bundles these assets
+// with the serverless function. Reading lazily inside an imported
+// module (lib/email/...) was NOT reliably traced — see research in
+// https://vercel.com/kb/guide/how-can-i-use-files-in-serverless-functions
+//
+// next.config.js also sets experimental.outputFileTracingIncludes
+// for public/fonts and public/branding as belt-and-suspenders.
+// ──────────────────────────────────────────────────────────────
+
+function loadAssetAsDataUri(relativePath: string, mime: string): string {
+  try {
+    const abs = path.resolve(process.cwd(), 'public', relativePath)
+    const bytes = readFileSync(abs)
+    return `data:${mime};base64,${bytes.toString('base64')}`
+  } catch (err) {
+    console.error(`[apply] Failed to load asset ${relativePath}:`, err)
+    return ''
+  }
+}
+
+// Load all PDF assets once at module load (amortized across requests
+// on a warm function instance).
+const LOGO_DATA_URI = loadAssetAsDataUri('branding/vitalis-logo.png', 'image/png')
+
+const FONT_BUNDLE: FontBundle = {
+  cormorant400:        loadAssetAsDataUri('fonts/cormorant-garamond-400.woff',        'font/woff'),
+  cormorant400Italic:  loadAssetAsDataUri('fonts/cormorant-garamond-400-italic.woff', 'font/woff'),
+  cormorant500:        loadAssetAsDataUri('fonts/cormorant-garamond-500.woff',        'font/woff'),
+  cormorant600:        loadAssetAsDataUri('fonts/cormorant-garamond-600.woff',        'font/woff'),
+  dmsans400:           loadAssetAsDataUri('fonts/dm-sans-400.woff',                   'font/woff'),
+  dmsans500:           loadAssetAsDataUri('fonts/dm-sans-500.woff',                   'font/woff'),
+  dmsans600:           loadAssetAsDataUri('fonts/dm-sans-600.woff',                   'font/woff'),
+  dmsans700:           loadAssetAsDataUri('fonts/dm-sans-700.woff',                   'font/woff'),
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,13 +86,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Compose the notes column with the [APPLICATION] prefix (matches
-    // existing convention — the email template strips it back out).
     const notesColumnValue = notes
       ? `[APPLICATION] Years exp: ${years_experience || 'N/A'}\n\n${notes}`
       : `[APPLICATION] Years exp: ${years_experience || 'N/A'}`
 
-    // Insert provider row
     const { data: provider, error: insertErr } = await db
       .from('providers')
       .insert({
@@ -89,8 +128,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Build the shared ApplicantData object (raw applicant notes, not the
-    // prefixed DB value).
     const applicant: ApplicantData = {
       id: provider.id,
       name,
@@ -117,13 +154,10 @@ export async function POST(req: NextRequest) {
         wheelchair_transfer: !!wheelchair_transfer,
         hoyer_lift: !!hoyer_lift,
       },
-      notes: notes || null, // raw, no prefix
+      notes: notes || null,
       submitted_at: new Date(),
     }
 
-    // Notify coordinator — soft failure pattern.
-    // Any error here is logged to email_send_failures; the applicant
-    // still sees success because their record IS saved.
     const coordinatorEmail = process.env.COORDINATOR_EMAIL
     const resendKey        = process.env.RESEND_API_KEY
     const fromEmail        = process.env.RESEND_FROM_EMAIL
@@ -133,50 +167,33 @@ export async function POST(req: NextRequest) {
 
     if (coordinatorEmail && resendKey && fromEmail) {
       try {
-        // Build subject, HTML, and PDF
         const locationForSubject = [city, state].filter(Boolean).join(' ') || 'MD'
         const subject = `New Provider Application — ${name} (${credential_type}, ${locationForSubject})`
 
-        // Logo URL — used by the EMAIL template only. Gmail/Outlook fetch
-        // this via their image proxies, so it must be publicly reachable.
-        // As of v2.7.15-a, /branding/ is whitelisted in middleware.ts.
+        // Logo URL — used by the EMAIL template. Gmail/Outlook fetch via
+        // image proxies, so it must be publicly reachable. /branding/
+        // is whitelisted in middleware.ts as of v2.7.15-a.
         const logoUrl = `${appUrl}/branding/vitalis-logo.png`
         const portalUrl = `${appUrl}/providers/${provider.id}`
 
         const html = renderApplyNotificationHtml(applicant, { logoUrl, portalUrl })
 
-        // Logo as base64 data URI — used by the PDF renderer ONLY.
-        // @react-pdf/renderer fetches URLs over the network at render
-        // time; if the URL is behind middleware, slow, or unreachable,
-        // the whole PDF generation throws. Reading from the filesystem
-        // eliminates that dependency entirely.
-        let logoDataUri = ''
-        try {
-          const logoPath = join(process.cwd(), 'public', 'branding', 'vitalis-logo.png')
-          const logoBytes = await readFile(logoPath)
-          logoDataUri = `data:image/png;base64,${logoBytes.toString('base64')}`
-        } catch (logoErr) {
-          console.error('[apply] Logo file read failed:', logoErr)
-          // Proceed without logo — PDF will render with empty space
-          // where the logo would be, which is ugly but not fatal.
-        }
-
-        // Generate PDF. If generation throws for any reason, the email
-        // still sends without the attachment rather than losing the
-        // whole notification.
+        // Generate PDF. Fonts and logo are base64 data URIs loaded at
+        // module load from public/fonts and public/branding.
         let pdfBuffer: Buffer
         try {
           const pdfElement = React.createElement(ApplyNotificationPdf, {
             applicant,
-            logoDataUrl: logoDataUri,
+            logoDataUrl: LOGO_DATA_URI,
+            fonts: FONT_BUNDLE,
           }) as unknown as React.ReactElement<DocumentProps>
           pdfBuffer = await renderToBuffer(pdfElement)
-        } catch (pdfErr) {
-          console.error('[apply] PDF generation failed:', pdfErr)
+        } catch (pdfErr: any) {
+          console.error('[apply] PDF generation failed:', pdfErr?.message || pdfErr)
+          if (pdfErr?.stack) console.error('[apply] PDF stack:', pdfErr.stack)
           pdfBuffer = Buffer.alloc(0)
         }
 
-        // Sanitize name for filename
         const safeName = name.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '') || 'Applicant'
         const datestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
         const pdfFilename = `Vitalis-Application-${safeName}-${datestamp}.pdf`
@@ -184,32 +201,27 @@ export async function POST(req: NextRequest) {
         const { Resend } = await import('resend')
         const resend = new Resend(resendKey)
 
-        // Reply-To = applicant's email. When the coordinator clicks
-        // Reply in their mail client, the reply routes directly to the
-        // applicant (standard pattern for inbound-lead notifications).
-        // Changed in v2.7.15-a from the initial coordinator-as-reply-to
-        // design, which didn't make sense — the coordinator would be
-        // replying to themselves.
+        // Reply-To = applicant's email. Resend SDK v3.x uses snake_case
+        // `reply_to` — the camelCase `replyTo` form is a v4.x rename that
+        // silently no-ops on v3. Pinned `resend@^3.2.0` in package.json
+        // so we write the v3 form. If we ever bump to v4, change this
+        // back to replyTo: email.
         const sendPayload: any = {
           from: fromEmail,
           to: coordinatorEmail,
-          replyTo: email,
+          reply_to: email,
           subject,
           html,
         }
 
         if (pdfBuffer.length > 0) {
           sendPayload.attachments = [
-            {
-              filename: pdfFilename,
-              content: pdfBuffer,
-            },
+            { filename: pdfFilename, content: pdfBuffer },
           ]
         }
 
         const sendResult = await resend.emails.send(sendPayload)
 
-        // Resend SDK returns { data, error } — not all errors throw
         if (sendResult && (sendResult as any).error) {
           throw new Error(
             `Resend error: ${JSON.stringify((sendResult as any).error)}`
@@ -218,7 +230,6 @@ export async function POST(req: NextRequest) {
 
         notified = true
       } catch (sendErr: any) {
-        // Log the failure — never throws to client, this is soft failure
         try {
           await db.from('email_send_failures').insert({
             recipient: coordinatorEmail,
@@ -231,7 +242,6 @@ export async function POST(req: NextRequest) {
               applicant_email: email,
               credential: credential_type,
               from_email: fromEmail,
-              // Keep the raw applicant fields so v2.7.16 retry can re-render
               applicant_snapshot: {
                 ...applicant,
                 submitted_at: applicant.submitted_at.toISOString(),
@@ -240,7 +250,6 @@ export async function POST(req: NextRequest) {
             related_provider_id: provider.id,
           })
         } catch (logErr) {
-          // Last-resort: Vercel function logs
           console.error('[apply] Failed to log email failure:', logErr)
           console.error('[apply] Original send error was:', sendErr)
         }
@@ -256,7 +265,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// CORS preflight for external website submissions
 export async function OPTIONS() {
   return new NextResponse(null, {
     headers: {

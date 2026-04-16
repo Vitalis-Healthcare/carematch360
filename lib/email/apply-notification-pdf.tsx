@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  Document, Page, Text, View, Image, StyleSheet, Font, Link,
+  Document, Page, Text, View, Image, StyleSheet, Font,
 } from '@react-pdf/renderer'
 import React from 'react'
 import {
@@ -12,29 +12,54 @@ import {
 } from './types'
 
 // ──────────────────────────────────────────────────────────────
-// Fonts — registered from Google Fonts CDN at module load.
-// @react-pdf/renderer fetches and caches these per function cold start.
+// Font registration is deferred until render time so we can pass
+// in the actual font bytes (as base64 data URIs) from the caller.
+//
+// The caller (app/api/providers/apply/route.ts) reads the .woff
+// files from public/fonts at request time with static path.resolve
+// calls so Vercel's file tracer bundles them with the function.
+// This fixes the v2.7.15 failure where hard-coded Google Fonts CDN
+// URLs returned 404 and crashed renderToBuffer.
+//
+// react-pdf supports TTF and WOFF (NOT WOFF2). @fontsource packages
+// ship .woff files that are compatible.
 // ──────────────────────────────────────────────────────────────
 
-Font.register({
-  family: 'Cormorant Garamond',
-  fonts: [
-    { src: 'https://fonts.gstatic.com/s/cormorantgaramond/v16/co3bmX5slCNuHLi8bLeY9MK7whWMhyjYrEPjuw.ttf', fontWeight: 400 },
-    { src: 'https://fonts.gstatic.com/s/cormorantgaramond/v16/co3YmX5slCNuHLi8bLeY9MK7whWMhyjornlYABQXKQ.ttf', fontWeight: 400, fontStyle: 'italic' },
-    { src: 'https://fonts.gstatic.com/s/cormorantgaramond/v16/co3bmX5slCNuHLi8bLeY9MK7whWMhyjQr0PjuBC1.ttf', fontWeight: 500 },
-    { src: 'https://fonts.gstatic.com/s/cormorantgaramond/v16/co3bmX5slCNuHLi8bLeY9MK7whWMhyjYYUPjuBC1.ttf', fontWeight: 600 },
-  ],
-})
+export type FontBundle = {
+  cormorant400: string
+  cormorant400Italic: string
+  cormorant500: string
+  cormorant600: string
+  dmsans400: string
+  dmsans500: string
+  dmsans600: string
+  dmsans700: string
+}
 
-Font.register({
-  family: 'DM Sans',
-  fonts: [
-    { src: 'https://fonts.gstatic.com/s/dmsans/v15/rP2tp2ywxg089UriI5-g7vcAFjwXFw.ttf', fontWeight: 400 },
-    { src: 'https://fonts.gstatic.com/s/dmsans/v15/rP2tp2ywxg089UriI5-g4vcAFjwXwXY.ttf', fontWeight: 500 },
-    { src: 'https://fonts.gstatic.com/s/dmsans/v15/rP2tp2ywxg089UriI5-g0PcAFjwXwXY.ttf', fontWeight: 600 },
-    { src: 'https://fonts.gstatic.com/s/dmsans/v15/rP2tp2ywxg089UriI5-g5vcAFjwXwXY.ttf', fontWeight: 700 },
-  ],
-})
+let fontsRegistered = false
+
+function registerFontsOnce(fonts: FontBundle) {
+  if (fontsRegistered) return
+  Font.register({
+    family: 'Cormorant Garamond',
+    fonts: [
+      { src: fonts.cormorant400, fontWeight: 400 },
+      { src: fonts.cormorant400Italic, fontWeight: 400, fontStyle: 'italic' },
+      { src: fonts.cormorant500, fontWeight: 500 },
+      { src: fonts.cormorant600, fontWeight: 600 },
+    ],
+  })
+  Font.register({
+    family: 'DM Sans',
+    fonts: [
+      { src: fonts.dmsans400, fontWeight: 400 },
+      { src: fonts.dmsans500, fontWeight: 500 },
+      { src: fonts.dmsans600, fontWeight: 600 },
+      { src: fonts.dmsans700, fontWeight: 700 },
+    ],
+  })
+  fontsRegistered = true
+}
 
 // ──────────────────────────────────────────────────────────────
 // Palette
@@ -63,8 +88,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: C.text,
   },
-
-  // Header
   logoWrap: { alignItems: 'center', marginBottom: 18 },
   logo: { width: 180, height: 120, objectFit: 'contain' },
   headerBand: {
@@ -81,7 +104,6 @@ const styles = StyleSheet.create({
   },
   headerDate: { fontFamily: 'DM Sans', fontSize: 10, color: '#D9E8C8' },
 
-  // Hero
   heroName: {
     fontFamily: 'Cormorant Garamond', fontSize: 26, fontWeight: 500,
     color: C.text, letterSpacing: -0.2, marginBottom: 4,
@@ -92,7 +114,6 @@ const styles = StyleSheet.create({
   heroCredential: { color: C.greenDark, fontWeight: 600 },
   heroDot: { color: C.border },
 
-  // Section
   sectionWrap: { marginTop: 18 },
   sectionHeader: {
     fontFamily: 'DM Sans', fontSize: 8.5, fontWeight: 700,
@@ -101,7 +122,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  // Data rows
   row: { flexDirection: 'row', paddingVertical: 3.5 },
   rowLabel: {
     width: 110, fontFamily: 'DM Sans', fontSize: 9, color: C.muted,
@@ -116,7 +136,6 @@ const styles = StyleSheet.create({
   },
   rowValueMuted: { color: C.muted, fontWeight: 400 },
 
-  // Chips
   chipWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap' },
   chip: {
     backgroundColor: C.greenLight,
@@ -126,7 +145,6 @@ const styles = StyleSheet.create({
     marginRight: 4, marginBottom: 3.5,
   },
 
-  // Capabilities grid
   capRow: { flexDirection: 'row', marginTop: 4 },
   capCell: {
     flexDirection: 'row', alignItems: 'center',
@@ -144,14 +162,12 @@ const styles = StyleSheet.create({
   capLabelOn:  { fontFamily: 'DM Sans', fontSize: 10, color: C.text, fontWeight: 600 },
   capLabelOff: { fontFamily: 'DM Sans', fontSize: 10, color: C.muted, fontWeight: 400 },
 
-  // Skills group
   skillGroupLabel: {
     fontFamily: 'DM Sans', fontSize: 8.5, fontWeight: 600,
     letterSpacing: 0.6, color: C.greenMid, textTransform: 'uppercase',
     marginTop: 8, marginBottom: 5,
   },
 
-  // Notes
   notesBox: {
     backgroundColor: C.cream,
     borderLeftWidth: 2.5, borderLeftColor: C.greenBright,
@@ -163,7 +179,6 @@ const styles = StyleSheet.create({
     color: C.text, lineHeight: 1.55,
   },
 
-  // Footer
   footer: {
     position: 'absolute', bottom: 28, left: 54, right: 54,
     borderTopWidth: 0.75, borderTopColor: C.border,
@@ -178,7 +193,7 @@ const styles = StyleSheet.create({
 })
 
 // ──────────────────────────────────────────────────────────────
-// Reusable row components
+// Reusable pieces
 // ──────────────────────────────────────────────────────────────
 
 function Row({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
@@ -213,7 +228,6 @@ function ChipRow({ label, values }: { label: string; values: string[] }) {
 }
 
 function Capabilities({ caps }: { caps: ApplicantData['capabilities'] }) {
-  // Build pairs of capability cells into rows of 2
   const rows: { key: string; label: string; present: boolean }[][] = []
   for (let i = 0; i < CAPABILITY_LABELS.length; i += 2) {
     const pair = [
@@ -290,10 +304,15 @@ const fmtDate = (d: Date): string =>
 export function ApplyNotificationPdf({
   applicant,
   logoDataUrl,
+  fonts,
 }: {
   applicant: ApplicantData
   logoDataUrl: string
+  fonts: FontBundle
 }) {
+  // Register fonts on first render per process lifetime
+  registerFontsOnce(fonts)
+
   const locationLine = [applicant.city, applicant.state].filter(Boolean).join(', ') || 'Location not provided'
   const fullAddress = [
     applicant.address,
@@ -319,18 +338,17 @@ export function ApplyNotificationPdf({
     >
       <Page size="LETTER" style={styles.page}>
 
-        {/* Logo */}
-        <View style={styles.logoWrap}>
-          <Image style={styles.logo} src={logoDataUrl} />
-        </View>
+        {logoDataUrl ? (
+          <View style={styles.logoWrap}>
+            <Image style={styles.logo} src={logoDataUrl} />
+          </View>
+        ) : null}
 
-        {/* Header band */}
         <View style={styles.headerBand}>
           <Text style={styles.headerEyebrow}>New Provider Application</Text>
           <Text style={styles.headerDate}>Submitted {fmtDate(applicant.submitted_at)}</Text>
         </View>
 
-        {/* Hero */}
         <View>
           <Text style={styles.heroName}>{applicant.name}</Text>
           <Text style={styles.heroMeta}>
@@ -340,7 +358,6 @@ export function ApplyNotificationPdf({
           </Text>
         </View>
 
-        {/* Personal */}
         <View style={styles.sectionWrap}>
           <Text style={styles.sectionHeader}>Personal</Text>
           <Row label="Email"   value={applicant.email}/>
@@ -349,7 +366,6 @@ export function ApplyNotificationPdf({
           <Row label="Gender"  value={prettifyGender(applicant.gender)}/>
         </View>
 
-        {/* Credentials */}
         <View style={styles.sectionWrap}>
           <Text style={styles.sectionHeader}>Credentials</Text>
           <Row      label="Primary"    value={applicant.credential_type}/>
@@ -358,7 +374,6 @@ export function ApplyNotificationPdf({
           <Row      label="Experience" value={yearsExp}/>
         </View>
 
-        {/* Availability */}
         <View style={styles.sectionWrap}>
           <Text style={styles.sectionHeader}>Availability</Text>
           <ChipRow label="Shifts"         values={shifts}/>
@@ -366,25 +381,21 @@ export function ApplyNotificationPdf({
           <Row     label="Service radius" value={radius}/>
         </View>
 
-        {/* Capabilities */}
         <View style={styles.sectionWrap} wrap={false}>
           <Text style={styles.sectionHeader}>Capabilities</Text>
           <Capabilities caps={applicant.capabilities}/>
         </View>
 
-        {/* Skills */}
         <View style={styles.sectionWrap}>
           <Text style={styles.sectionHeader}>Skills</Text>
           <SkillsBlock skills={applicant.skills || []}/>
         </View>
 
-        {/* Notes */}
         <View style={styles.sectionWrap}>
           <Text style={styles.sectionHeader}>Notes</Text>
           <Notes text={applicant.notes}/>
         </View>
 
-        {/* Footer */}
         <View style={styles.footer} fixed>
           <View>
             <Text style={styles.footerLeft}>Vitalis HealthCare Services LLC</Text>
