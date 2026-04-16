@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { renderApplyNotificationHtml } from '@/lib/email/apply-notification-html'
-import {
-  ApplyNotificationPdf,
-  type FontBundle,
-} from '@/lib/email/apply-notification-pdf'
+import { renderApplicantConfirmationHtml } from '@/lib/email/applicant-confirmation-html'
+import { sendApplyNotification } from '@/lib/email/send-apply-notification'
+import type { FontBundle } from '@/lib/email/apply-notification-pdf'
 import type { ApplicantData } from '@/lib/email/types'
-import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer'
-import React from 'react'
 import { readFileSync } from 'fs'
 import path from 'path'
 
@@ -25,6 +21,10 @@ export const maxDuration = 30
 //
 // next.config.js also sets experimental.outputFileTracingIncludes
 // for public/fonts and public/branding as belt-and-suspenders.
+//
+// The retry endpoint (app/api/admin/email-failures/[id]/route.ts)
+// also loads these same assets at its own module scope for the same
+// reason — do NOT centralize this into a shared module.
 // ──────────────────────────────────────────────────────────────
 
 function loadAssetAsDataUri(relativePath: string, mime: string): string {
@@ -38,8 +38,6 @@ function loadAssetAsDataUri(relativePath: string, mime: string): string {
   }
 }
 
-// Load all PDF assets once at module load (amortized across requests
-// on a warm function instance).
 const LOGO_DATA_URI = loadAssetAsDataUri('branding/vitalis-logo.png', 'image/png')
 
 const FONT_BUNDLE: FontBundle = {
@@ -165,76 +163,26 @@ export async function POST(req: NextRequest) {
 
     let notified = false
 
+    // ── Coordinator notification ──────────────────────────────
     if (coordinatorEmail && resendKey && fromEmail) {
-      try {
-        const locationForSubject = [city, state].filter(Boolean).join(' ') || 'MD'
-        const subject = `New Provider Application — ${name} (${credential_type}, ${locationForSubject})`
+      const result = await sendApplyNotification({
+        applicant,
+        coordinatorEmail,
+        fromEmail,
+        appUrl,
+        resendKey,
+        logoDataUrl: LOGO_DATA_URI,
+        fonts: FONT_BUNDLE,
+      })
 
-        // Logo URL — used by the EMAIL template. Gmail/Outlook fetch via
-        // image proxies, so it must be publicly reachable. /branding/
-        // is whitelisted in middleware.ts as of v2.7.15-a.
-        const logoUrl = `${appUrl}/branding/vitalis-logo.png`
-        const portalUrl = `${appUrl}/providers/${provider.id}`
-
-        const html = renderApplyNotificationHtml(applicant, { logoUrl, portalUrl })
-
-        // Generate PDF. Fonts and logo are base64 data URIs loaded at
-        // module load from public/fonts and public/branding.
-        let pdfBuffer: Buffer
-        try {
-          const pdfElement = React.createElement(ApplyNotificationPdf, {
-            applicant,
-            logoDataUrl: LOGO_DATA_URI,
-            fonts: FONT_BUNDLE,
-          }) as unknown as React.ReactElement<DocumentProps>
-          pdfBuffer = await renderToBuffer(pdfElement)
-        } catch (pdfErr: any) {
-          console.error('[apply] PDF generation failed:', pdfErr?.message || pdfErr)
-          if (pdfErr?.stack) console.error('[apply] PDF stack:', pdfErr.stack)
-          pdfBuffer = Buffer.alloc(0)
-        }
-
-        const safeName = name.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '') || 'Applicant'
-        const datestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-        const pdfFilename = `Vitalis-Application-${safeName}-${datestamp}.pdf`
-
-        const { Resend } = await import('resend')
-        const resend = new Resend(resendKey)
-
-        // Reply-To = applicant's email. Resend SDK v3.x uses snake_case
-        // `reply_to` — the camelCase `replyTo` form is a v4.x rename that
-        // silently no-ops on v3. Pinned `resend@^3.2.0` in package.json
-        // so we write the v3 form. If we ever bump to v4, change this
-        // back to replyTo: email.
-        const sendPayload: any = {
-          from: fromEmail,
-          to: coordinatorEmail,
-          reply_to: email,
-          subject,
-          html,
-        }
-
-        if (pdfBuffer.length > 0) {
-          sendPayload.attachments = [
-            { filename: pdfFilename, content: pdfBuffer },
-          ]
-        }
-
-        const sendResult = await resend.emails.send(sendPayload)
-
-        if (sendResult && (sendResult as any).error) {
-          throw new Error(
-            `Resend error: ${JSON.stringify((sendResult as any).error)}`
-          )
-        }
-
+      if (result.ok) {
         notified = true
-      } catch (sendErr: any) {
+      } else {
         try {
           await db.from('email_send_failures').insert({
             recipient: coordinatorEmail,
-            subject: `New Provider Application — ${name} (${credential_type})`,
-            error_message: sendErr?.message || String(sendErr) || 'Unknown send error',
+            subject: result.subject,
+            error_message: result.error,
             payload: {
               kind: 'apply_notification',
               provider_id: provider.id,
@@ -251,6 +199,64 @@ export async function POST(req: NextRequest) {
           })
         } catch (logErr) {
           console.error('[apply] Failed to log email failure:', logErr)
+          console.error('[apply] Original send error was:', result.error)
+        }
+      }
+    }
+
+    // ── Applicant confirmation ────────────────────────────────
+    // Gated by APPLICANT_CONFIRMATION_ENABLED. Default is ENABLED —
+    // we read `!== 'false'` so an unset var means on. Fires AFTER the
+    // coordinator notification so a failure here can't block that send.
+    const confirmationEnabled =
+      (process.env.APPLICANT_CONFIRMATION_ENABLED ?? 'true') !== 'false'
+
+    if (confirmationEnabled && resendKey && fromEmail && email) {
+      const confirmationSubject = 'Thank you for applying to Vitalis HealthCare'
+      try {
+        const logoUrl = `${appUrl}/branding/vitalis-logo.png`
+        const html = renderApplicantConfirmationHtml(applicant, { logoUrl })
+
+        const { Resend } = await import('resend')
+        const resend = new Resend(resendKey)
+
+        // Reply-To = coordinator. Resend SDK v3.x uses snake_case.
+        const sendResult = await resend.emails.send({
+          from: fromEmail,
+          to: email,
+          reply_to: coordinatorEmail || fromEmail,
+          subject: confirmationSubject,
+          html,
+        } as any)
+
+        if (sendResult && (sendResult as any).error) {
+          throw new Error(
+            `Resend error: ${JSON.stringify((sendResult as any).error)}`
+          )
+        }
+      } catch (sendErr: any) {
+        try {
+          await db.from('email_send_failures').insert({
+            recipient: email,
+            subject: confirmationSubject,
+            error_message: sendErr?.message || String(sendErr) || 'Unknown send error',
+            payload: {
+              kind: 'applicant_confirmation',
+              provider_id: provider.id,
+              applicant_name: name,
+              applicant_email: email,
+              credential: credential_type,
+              from_email: fromEmail,
+              reply_to: coordinatorEmail || fromEmail,
+              applicant_snapshot: {
+                ...applicant,
+                submitted_at: applicant.submitted_at.toISOString(),
+              },
+            },
+            related_provider_id: provider.id,
+          })
+        } catch (logErr) {
+          console.error('[apply] Failed to log confirmation email failure:', logErr)
           console.error('[apply] Original send error was:', sendErr)
         }
       }
