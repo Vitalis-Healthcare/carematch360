@@ -10,6 +10,11 @@ const PUBLIC_PATHS = [
   // ── v2.7.12a: public compliance pages for A2P 10DLC (Twilio) —
   // must be reachable by TCR reviewers without a login. ──
   '/privacy', '/sms-terms',
+  // ── v2.7.15-a: shared branding assets (logo, etc.) — referenced
+  // from transactional emails rendered by external clients (Gmail
+  // image proxy, Outlook, Apple Mail), so they must be publicly
+  // fetchable without a session. Served from /public/branding/. ──
+  '/branding/',
   '/_next', '/favicon',
 ]
 

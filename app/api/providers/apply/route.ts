@@ -5,6 +5,8 @@ import { ApplyNotificationPdf } from '@/lib/email/apply-notification-pdf'
 import type { ApplicantData } from '@/lib/email/types'
 import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer'
 import React from 'react'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
 
 export const runtime = 'nodejs' // @react-pdf/renderer requires Node, not Edge
 export const maxDuration = 30   // PDF + font fetch can take a few seconds on cold start
@@ -135,24 +137,41 @@ export async function POST(req: NextRequest) {
         const locationForSubject = [city, state].filter(Boolean).join(' ') || 'MD'
         const subject = `New Provider Application — ${name} (${credential_type}, ${locationForSubject})`
 
+        // Logo URL — used by the EMAIL template only. Gmail/Outlook fetch
+        // this via their image proxies, so it must be publicly reachable.
+        // As of v2.7.15-a, /branding/ is whitelisted in middleware.ts.
         const logoUrl = `${appUrl}/branding/vitalis-logo.png`
         const portalUrl = `${appUrl}/providers/${provider.id}`
 
         const html = renderApplyNotificationHtml(applicant, { logoUrl, portalUrl })
 
-        // Generate PDF — logo is passed as a URL; @react-pdf/renderer will
-        // fetch it at render time. If it fails, PDF generation falls back
-        // to a blank space rather than throwing.
+        // Logo as base64 data URI — used by the PDF renderer ONLY.
+        // @react-pdf/renderer fetches URLs over the network at render
+        // time; if the URL is behind middleware, slow, or unreachable,
+        // the whole PDF generation throws. Reading from the filesystem
+        // eliminates that dependency entirely.
+        let logoDataUri = ''
+        try {
+          const logoPath = join(process.cwd(), 'public', 'branding', 'vitalis-logo.png')
+          const logoBytes = await readFile(logoPath)
+          logoDataUri = `data:image/png;base64,${logoBytes.toString('base64')}`
+        } catch (logoErr) {
+          console.error('[apply] Logo file read failed:', logoErr)
+          // Proceed without logo — PDF will render with empty space
+          // where the logo would be, which is ugly but not fatal.
+        }
+
+        // Generate PDF. If generation throws for any reason, the email
+        // still sends without the attachment rather than losing the
+        // whole notification.
         let pdfBuffer: Buffer
         try {
           const pdfElement = React.createElement(ApplyNotificationPdf, {
             applicant,
-            logoDataUrl: logoUrl,
+            logoDataUrl: logoDataUri,
           }) as unknown as React.ReactElement<DocumentProps>
           pdfBuffer = await renderToBuffer(pdfElement)
         } catch (pdfErr) {
-          // Log but don't abort — send the email without the attachment
-          // rather than losing the whole notification.
           console.error('[apply] PDF generation failed:', pdfErr)
           pdfBuffer = Buffer.alloc(0)
         }
@@ -165,10 +184,16 @@ export async function POST(req: NextRequest) {
         const { Resend } = await import('resend')
         const resend = new Resend(resendKey)
 
+        // Reply-To = applicant's email. When the coordinator clicks
+        // Reply in their mail client, the reply routes directly to the
+        // applicant (standard pattern for inbound-lead notifications).
+        // Changed in v2.7.15-a from the initial coordinator-as-reply-to
+        // design, which didn't make sense — the coordinator would be
+        // replying to themselves.
         const sendPayload: any = {
           from: fromEmail,
           to: coordinatorEmail,
-          replyTo: coordinatorEmail,
+          replyTo: email,
           subject,
           html,
         }
