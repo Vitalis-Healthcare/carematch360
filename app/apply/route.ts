@@ -501,11 +501,10 @@ const HTML = `<!DOCTYPE html>
         <div class="field">
           <label>Gender <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
           <select id="gender">
-            <option value="">Prefer not to say</option>
+            <option value="unspecified">Prefer not to say</option>
             <option value="female">Female</option>
             <option value="male">Male</option>
-            <option value="nonbinary">Non-binary</option>
-            <option value="other">Other</option>
+            <option value="non_binary">Non-binary</option>
           </select>
         </div>
       </div>
@@ -955,7 +954,7 @@ async function submitForm() {
     city: document.getElementById('city').value.trim() || 'Silver Spring',
     state: document.getElementById('state').value,
     zip: document.getElementById('zip').value.trim(),
-    gender: document.getElementById('gender').value,
+    gender: document.getElementById('gender').value || 'unspecified',
     credential_type: state.primaryCred,
     additional_credentials: state.additionalCreds,
     license_number: document.getElementById('license_number').value.trim(),

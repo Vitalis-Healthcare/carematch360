@@ -8,3 +8,6 @@ out/
 
 # runner artifacts (added by v2.7.13-c deploy script)
 .npm-install.log
+
+# runner artifacts
+.npm-install.log
