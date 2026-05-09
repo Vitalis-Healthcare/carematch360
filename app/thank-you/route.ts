@@ -7,6 +7,15 @@ export async function GET() {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Request Received — Vitalis HealthCare</title>
+  <!-- Google tag (gtag.js) — Google Ads AW-934193606 -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=AW-934193606"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'AW-934193606');
+    gtag('event', 'conversion', {'send_to': 'AW-934193606/tfGcCOiTzo4YEMbTurOD'});
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet"/>
   <style>
