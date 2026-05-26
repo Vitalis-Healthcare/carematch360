@@ -16,6 +16,12 @@ function detectSource(p: any): ProviderSource {
   return 'manual'
 }
 
+// Comma-separated multi-select param → string[]. Empty values dropped.
+function splitCsv(v?: string): string[] {
+  if (!v) return []
+  return v.split(',').map(s => s.trim()).filter(Boolean)
+}
+
 export default async function ProvidersPage({
   searchParams,
 }: {
@@ -26,20 +32,61 @@ export default async function ProvidersPage({
     status?: string
     source?: string
     sort?: string
+    // v2.7.18 — new multi-dimension filters
+    gender?: string   // CSV: 'male,female,non_binary,unspecified'
+    city?: string     // single string, exact match
+    skills?: string   // CSV of canonical display strings (URL-encoded)
+    shifts?: string   // CSV: 'morning,afternoon,evening,overnight'
+    days?: string     // CSV: 'Monday,Tuesday,…,Sunday'
   }>
 }) {
   const params = await searchParams
   const db = createServiceClient()
+
+  // Parse multi-select params once
+  const genderList = splitCsv(params.gender)
+  const skillsList = splitCsv(params.skills)
+  const shiftList  = splitCsv(params.shifts)
+  const dayList    = splitCsv(params.days)
+
+  // City dropdown is populated from the FULL provider set so that the
+  // list of available cities does not shrink as other filters narrow
+  // the result. Pulled in a separate small query to keep this stable.
+  let cities: string[] = []
+  try {
+    const { data: cityRows } = await db
+      .from('providers')
+      .select('city')
+      .not('city', 'is', null)
+      .neq('city', '')
+    const cityList: string[] = []
+    for (const r of cityRows ?? []) {
+      const c = (r?.city as string | null | undefined)?.trim()
+      if (c) cityList.push(c)
+    }
+    cities = Array.from(new Set(cityList)).sort()
+  } catch {}
+
   let providers: any[] = []
 
   try {
-    // We pull everything and let JS handle source filter + sort, since
-    // `source` is derived rather than stored. With the current network
-    // size (~440 providers) this is comfortably fast.
+    // Push every indexable filter down to Postgres. With 500+ providers
+    // and growing, we no longer want to pull everything and filter in JS.
+    // `source` stays JS-side because it is derived from axiscare_id / notes.
+    // `search` stays JS-side to preserve the existing OR-across-fields
+    // behaviour (name OR email OR city).
     let q = db.from('providers').select('*')
-    if (params.credential)         q = q.eq('credential_type', params.credential)
-    if (params.available === '1')  q = q.eq('available', true).eq('status', 'active')
+    if (params.credential)            q = q.eq('credential_type', params.credential)
+    if (params.available === '1')     q = q.eq('available', true).eq('status', 'active')
     if (params.status === 'inactive') q = q.eq('status', 'inactive')
+
+    // v2.7.18 — new filters
+    if (genderList.length) q = q.in('gender', genderList)
+    if (params.city)       q = q.eq('city', params.city)
+    if (skillsList.length) q = q.contains('skills', skillsList)        // ALL must be present (@>)
+    if (shiftList.length)  q = q.overlaps('shift_preferences', shiftList) // ANY overlap (&&)
+    if (dayList.length)    q = q.overlaps('preferred_days', dayList)      // ANY overlap (&&)
+
     const { data } = await q
     providers = data ?? []
   } catch {}
@@ -87,6 +134,7 @@ export default async function ProvidersPage({
       params={{ ...params, source: sourceParam, sort }}
       credentialTypes={CREDENTIAL_TYPES}
       credentialLabels={CREDENTIAL_LABELS}
+      cities={cities}
     />
   )
 }
