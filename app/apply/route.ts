@@ -307,6 +307,92 @@ const HTML = `<!DOCTYPE html>
   .toggle-text { font-size: 13px; font-weight: 500; color: var(--text); }
   .toggle-text small { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
 
+  /* ── SMS CONSENT (v2.7.19) ──────────────────
+     A2P 10DLC CTA disclosure. Must be visible on the public form
+     without auth — TCR vetters review this page directly. Do not
+     hide behind step navigation. */
+  .sms-consent {
+    background: var(--gold-light);
+    border: 1.5px solid #E8D090;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-top: 6px;
+  }
+  .sms-consent-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .sms-consent-row input[type=checkbox] {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+  }
+  .sms-consent-box {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--green-mid);
+    border-radius: 5px;
+    background: #fff;
+    flex-shrink: 0;
+    position: relative;
+    margin-top: 1px;
+    transition: background 0.18s, border-color 0.18s;
+  }
+  .sms-consent-row input:checked ~ .sms-consent-box {
+    background: var(--green-bright);
+    border-color: var(--green-bright);
+  }
+  .sms-consent-row input:checked ~ .sms-consent-box::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .sms-consent-row input:focus-visible ~ .sms-consent-box {
+    box-shadow: 0 0 0 3px rgba(122,181,42,0.25);
+  }
+  .sms-consent-text {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .sms-consent-text strong {
+    color: var(--green-dark);
+    font-weight: 600;
+  }
+  .sms-consent-text em {
+    display: block;
+    margin-top: 6px;
+    font-style: normal;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .sms-consent-links {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(184, 134, 11, 0.3);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .sms-consent-links a {
+    color: var(--green-mid);
+    text-decoration: underline;
+    font-weight: 500;
+  }
+  .sms-consent-links a:hover {
+    color: var(--green-dark);
+  }
+
   /* ── NAVIGATION BUTTONS ──────────────────── */
   .nav-row {
     display: flex; justify-content: space-between; align-items: center;
@@ -543,6 +629,33 @@ const HTML = `<!DOCTYPE html>
           <input type="text" id="zip" placeholder="20901"/>
         </div>
       </div>
+
+      <!-- ── SMS CONSENT (v2.7.19) ──────────────────────────
+           A2P 10DLC compliance: explicit SMS opt-in on the public form.
+           Must be visible without advancing steps or filling other fields
+           so TCR vetters can confirm the CTA. Optional — declining does
+           not block submission. -->
+      <div class="section-label">Communication Preferences</div>
+      <div class="sms-consent" id="sms-consent-wrap">
+        <label class="sms-consent-row" for="sms_consent">
+          <input type="checkbox" id="sms_consent"/>
+          <span class="sms-consent-box" aria-hidden="true"></span>
+          <span class="sms-consent-text">
+            <strong>I agree to receive SMS text messages from Vitalis HealthCare</strong>
+            about case opportunities at the phone number provided.
+            Message and data rates may apply. Message frequency varies.
+            Reply <strong>STOP</strong> to opt out, <strong>HELP</strong> for help.
+            <em>Consent is not a condition of employment — you may decline SMS and still be considered for work via email and phone.</em>
+          </span>
+        </label>
+        <div class="sms-consent-links">
+          By checking the box above, you agree to our
+          <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+          and
+          <a href="/sms-terms" target="_blank" rel="noopener">SMS Terms</a>.
+        </div>
+      </div>
+
       <div class="form-error" id="err-1"></div>
       <div class="nav-row">
         <span></span>
@@ -918,6 +1031,7 @@ function showErr(el, msg) {
 }
 
 function buildReview() {
+  const smsConsent = document.getElementById('sms_consent').checked
   const rows = [
     ['Name', document.getElementById('name').value],
     ['Email', document.getElementById('email').value],
@@ -936,6 +1050,10 @@ function buildReview() {
     ['Hoyer Lift', document.getElementById('hoyer_lift').checked ? 'Yes' : 'No'],
     ['Wheelchair Transfer', document.getElementById('wheelchair_transfer').checked ? 'Yes' : 'No'],
     ['Notes', document.getElementById('notes').value || '—'],
+    // v2.7.19: surface SMS consent decision so the applicant confirms what they're agreeing to.
+    ['SMS Notifications', smsConsent
+      ? 'Yes — will receive case alerts via text'
+      : 'No — email and phone only'],
   ]
   document.getElementById('review-content').innerHTML = rows.map(([label, value]) =>
     \`<div class="review-row"><span class="review-label">\${label}</span><span class="review-value">\${value || '—'}</span></div>\`
@@ -970,6 +1088,8 @@ async function submitForm() {
     meal_prep: document.getElementById('meal_prep').checked,
     total_care: document.getElementById('total_care').checked,
     notes: document.getElementById('notes').value.trim(),
+    // v2.7.19: SMS consent (A2P 10DLC compliance)
+    sms_consent: document.getElementById('sms_consent').checked,
   }
   try {
     const res = await fetch('/api/providers/apply', {
