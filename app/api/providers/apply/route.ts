@@ -39,16 +39,15 @@ function loadAssetAsDataUri(relativePath: string, mime: string): string {
 }
 
 const LOGO_DATA_URI = loadAssetAsDataUri('branding/vitalis-logo.png', 'image/png')
-
 const FONT_BUNDLE: FontBundle = {
-  cormorant400:        loadAssetAsDataUri('fonts/cormorant-garamond-400.woff',        'font/woff'),
-  cormorant400Italic:  loadAssetAsDataUri('fonts/cormorant-garamond-400-italic.woff', 'font/woff'),
-  cormorant500:        loadAssetAsDataUri('fonts/cormorant-garamond-500.woff',        'font/woff'),
-  cormorant600:        loadAssetAsDataUri('fonts/cormorant-garamond-600.woff',        'font/woff'),
-  dmsans400:           loadAssetAsDataUri('fonts/dm-sans-400.woff',                   'font/woff'),
-  dmsans500:           loadAssetAsDataUri('fonts/dm-sans-500.woff',                   'font/woff'),
-  dmsans600:           loadAssetAsDataUri('fonts/dm-sans-600.woff',                   'font/woff'),
-  dmsans700:           loadAssetAsDataUri('fonts/dm-sans-700.woff',                   'font/woff'),
+  cormorant400: loadAssetAsDataUri('fonts/cormorant-garamond-400.woff', 'font/woff'),
+  cormorant400Italic: loadAssetAsDataUri('fonts/cormorant-garamond-400-italic.woff', 'font/woff'),
+  cormorant500: loadAssetAsDataUri('fonts/cormorant-garamond-500.woff', 'font/woff'),
+  cormorant600: loadAssetAsDataUri('fonts/cormorant-garamond-600.woff', 'font/woff'),
+  dmsans400: loadAssetAsDataUri('fonts/dm-sans-400.woff', 'font/woff'),
+  dmsans500: loadAssetAsDataUri('fonts/dm-sans-500.woff', 'font/woff'),
+  dmsans600: loadAssetAsDataUri('fonts/dm-sans-600.woff', 'font/woff'),
+  dmsans700: loadAssetAsDataUri('fonts/dm-sans-700.woff', 'font/woff'),
 }
 
 export async function POST(req: NextRequest) {
@@ -60,6 +59,10 @@ export async function POST(req: NextRequest) {
       years_experience, skills, preferred_days, shift_preferences,
       service_radius_miles, has_car, spanish_speaking, hoyer_lift,
       wheelchair_transfer, meal_prep, total_care, notes,
+      // v2.7.19: SMS consent for A2P 10DLC compliance. See providers.sms_consent
+      // and providers.sms_consent_at columns. Optional — applicants may decline
+      // and still be considered (per campaign filing).
+      sms_consent,
     } = body
 
     if (!name || !email || !phone || !credential_type) {
@@ -77,6 +80,7 @@ export async function POST(req: NextRequest) {
       .select('id')
       .eq('email', email)
       .maybeSingle()
+
     if (existing) {
       return NextResponse.json(
         { error: 'A provider with this email already exists in our system.' },
@@ -87,6 +91,12 @@ export async function POST(req: NextRequest) {
     const notesColumnValue = notes
       ? `[APPLICATION] Years exp: ${years_experience || 'N/A'}\n\n${notes}`
       : `[APPLICATION] Years exp: ${years_experience || 'N/A'}`
+
+    // v2.7.19: Coerce SMS consent to boolean and stamp timestamp only when
+    // the user opted in. sms_consent_at = NULL when declined so the column
+    // doubles as an audit trail of when consent was actually granted.
+    const smsConsentBool = !!sms_consent
+    const smsConsentAt = smsConsentBool ? new Date().toISOString() : null
 
     const { data: provider, error: insertErr } = await db
       .from('providers')
@@ -115,6 +125,8 @@ export async function POST(req: NextRequest) {
         available: false,
         status: 'inactive',
         notes: notesColumnValue,
+        sms_consent: smsConsentBool,
+        sms_consent_at: smsConsentAt,
       })
       .select()
       .single()
@@ -157,9 +169,9 @@ export async function POST(req: NextRequest) {
     }
 
     const coordinatorEmail = process.env.COORDINATOR_EMAIL
-    const resendKey        = process.env.RESEND_API_KEY
-    const fromEmail        = process.env.RESEND_FROM_EMAIL
-    const appUrl           = process.env.NEXT_PUBLIC_APP_URL || ''
+    const resendKey = process.env.RESEND_API_KEY
+    const fromEmail = process.env.RESEND_FROM_EMAIL
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
 
     let notified = false
 
@@ -213,6 +225,7 @@ export async function POST(req: NextRequest) {
 
     if (confirmationEnabled && resendKey && fromEmail && email) {
       const confirmationSubject = 'Thank you for applying to Vitalis HealthCare'
+
       try {
         const logoUrl = `${appUrl}/branding/vitalis-logo.png`
         const html = renderApplicantConfirmationHtml(applicant, { logoUrl })
@@ -262,7 +275,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, id: provider.id, notified })
+    return NextResponse.json({
+      success: true,
+      id: provider.id,
+      notified,
+      sms_consent: smsConsentBool,
+    })
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message || 'Unexpected error' },
