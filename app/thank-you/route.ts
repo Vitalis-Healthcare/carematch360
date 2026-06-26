@@ -14,7 +14,7 @@ export async function GET() {
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
     gtag('config', 'AW-934193606');
-    gtag('event', 'conversion', {'send_to': 'AW-934193606/tfGcCOiTzo4YEMbTurOD'});
+    gtag('event', 'conversion', {'send_to': 'AW-934193606/tfGcCOiTzo4YEMbTur0D'});
   </script>
   <!-- Google Analytics 4 — G-LPWTD5L870 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-LPWTD5L870"></script>
