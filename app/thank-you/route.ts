@@ -16,6 +16,14 @@ export async function GET() {
     gtag('config', 'AW-934193606');
     gtag('event', 'conversion', {'send_to': 'AW-934193606/tfGcCOiTzo4YEMbTurOD'});
   </script>
+  <!-- Google Analytics 4 — G-LPWTD5L870 -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-LPWTD5L870"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-LPWTD5L870');
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet"/>
   <style>
