@@ -84,6 +84,8 @@ export interface Provider {
   meal_prep: boolean; total_care: boolean
   wheelchair_transfer: boolean; hoyer_lift: boolean; spanish_speaking: boolean
   notes: string|null; created_at: string; updated_at: string
+  // v2.7.22 — set once this provider has been pushed into Vita as a candidate.
+  vita_candidate_id?: string|null; sent_to_vita_at?: string|null
 }
 
 export interface Client {
