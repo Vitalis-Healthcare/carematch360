@@ -15,6 +15,10 @@ const PUBLIC_PATHS = [
   //    image proxy, Outlook, Apple Mail), so they must be publicly
   //    fetchable without a session. Served from /public/branding/. ──
   '/branding/',
+  // ── v2.7.23: read-only aggregate stats for the Vitalis Portal
+  //    "Thursday Brief". Authenticated by the VITA_STATS_SECRET bearer
+  //    token, not by session cookie, so it must bypass the auth check. ──
+  '/api/stats',
   '/_next', '/favicon',
 ]
 
