@@ -15,7 +15,7 @@
 //     app/api/providers/apply/route.ts — do NOT centralize loading).
 
 import {
-  Document, Page, Text, View, Image, StyleSheet, Font,
+  Document, Page, Text, View, Image, StyleSheet, Font, Svg, Path,
 } from '@react-pdf/renderer'
 import React from 'react'
 import {
@@ -225,8 +225,7 @@ const styles = StyleSheet.create({
   },
   capCheckOn: {
     width: 12, height: 12, backgroundColor: C.greenBright, borderRadius: 6,
-    marginRight: 8, textAlign: 'center',
-    color: C.white, fontSize: 8, fontWeight: 700, lineHeight: 1.6,
+    marginRight: 8, alignItems: 'center', justifyContent: 'center',
   },
   capCheckOff: {
     width: 12, height: 12, borderWidth: 1, borderColor: C.border,
@@ -459,7 +458,21 @@ function ProviderPage({
             return (
               <View key={key} style={styles.capCell}>
                 {on ? (
-                  <Text style={styles.capCheckOn}>✓</Text>
+                  // v2.7.25 — vector check. The '✓' text glyph is not in
+                  // DM Sans, so v2.7.24 printed a bare dot. An Svg Path
+                  // renders crisply regardless of font coverage.
+                  <View style={styles.capCheckOn}>
+                    <Svg width={7} height={6} viewBox="0 0 7 6">
+                      <Path
+                        d="M0.8 3.1 L2.7 5 L6.2 0.9"
+                        stroke={C.white}
+                        strokeWidth={1.3}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        fill="none"
+                      />
+                    </Svg>
+                  </View>
                 ) : (
                   <View style={styles.capCheckOff} />
                 )}

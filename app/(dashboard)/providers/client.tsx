@@ -4,6 +4,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import SkillsModal from './skills-modal'
 
+// v2.7.25 — max providers per combined print/download PDF batch.
+// Enforced here (buttons disable) AND server-side in
+// app/api/providers/profile-pdf/route.ts. Keep the two in sync.
+const PDF_BATCH_CAP = 25
+
 const CRED_COLORS: Record<string, string> = {
   RN: '#0EA5E9', LPN: '#8B5CF6', CNA: '#10B981', GNA: '#14B8A6',
   CMT: '#F59E0B', PT: '#EF4444', OT: '#EC4899', ST: '#6366F1', UA: '#84CC16',
@@ -166,6 +171,37 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
     setTimeout(() => setToast(''), 3000)
   }
 
+  // ── v2.7.25 — combined profile PDF for the current selection ──────
+  // A dynamically built form POST (not fetch) so that:
+  //   - print: target=_blank opens the inline PDF in a new tab without
+  //     tripping popup blockers (form submits are user gestures)
+  //   - download: Content-Disposition: attachment downloads in place
+  //     without navigating away
+  // The route enforces the same PDF_BATCH_CAP server-side.
+  function submitProfilePdf(download: boolean) {
+    const ids = [...selected]
+    if (ids.length === 0 || ids.length > PDF_BATCH_CAP) return
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = '/api/providers/profile-pdf'
+    if (!download) form.target = '_blank'
+    const idsInput = document.createElement('input')
+    idsInput.type = 'hidden'
+    idsInput.name = 'ids'
+    idsInput.value = ids.join(',')
+    form.appendChild(idsInput)
+    if (download) {
+      const dl = document.createElement('input')
+      dl.type = 'hidden'
+      dl.name = 'download'
+      dl.value = '1'
+      form.appendChild(dl)
+    }
+    document.body.appendChild(form)
+    form.submit()
+    form.remove()
+  }
+
   // Submit the filter form by updating the URL — this triggers a server
   // re-fetch with the new searchParams. Any param not passed in `next`
   // falls back to the current value in `params`, so existing filters
@@ -299,18 +335,37 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
         </div>
       )}
 
-      {/* Bulk action bar — shown when inactive providers are selected */}
-      {inactiveSelected.length > 0 && (
-        <div style={{ background: '#0B3D5C', borderRadius: 10, padding: '12px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Bulk action bar — shown when any providers are selected (v2.7.25).
+          Print/Download work on the whole selection; Activate keeps its
+          original behavior and appears only when inactive rows are selected. */}
+      {selected.size > 0 && (
+        <div style={{ background: '#0B3D5C', borderRadius: 10, padding: '12px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
           <div style={{ color: '#fff', fontSize: 13.5, fontWeight: 500 }}>
-            {inactiveSelected.length} inactive provider{inactiveSelected.length !== 1 ? 's' : ''} selected
+            {selected.size} provider{selected.size !== 1 ? 's' : ''} selected
+            {selected.size > PDF_BATCH_CAP && (
+              <span style={{ marginLeft: 10, fontSize: 12, color: '#FCD34D', fontWeight: 400 }}>
+                Print/download is limited to {PDF_BATCH_CAP} at a time
+              </span>
+            )}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={() => setSelected(new Set())} style={{ ...S.btnGhost, color: 'rgba(255,255,255,0.6)' }}>✕ Clear</button>
-            <button onClick={() => activateSelected(inactiveSelected)} disabled={activating}
-              style={{ ...S.btnActivate, opacity: activating ? 0.6 : 1 }}>
-              ✓ Activate {inactiveSelected.length} selected
+            <button onClick={() => submitProfilePdf(false)} disabled={selected.size > PDF_BATCH_CAP}
+              title="Open a combined print-ready PDF in a new tab"
+              style={{ ...S.btnGhost, color: '#fff', border: '1px solid rgba(255,255,255,0.35)', borderRadius: 7, opacity: selected.size > PDF_BATCH_CAP ? 0.4 : 1, cursor: selected.size > PDF_BATCH_CAP ? 'not-allowed' : 'pointer' }}>
+              🖨 Print profiles
             </button>
+            <button onClick={() => submitProfilePdf(true)} disabled={selected.size > PDF_BATCH_CAP}
+              title="Download the combined profiles as one PDF"
+              style={{ ...S.btnGhost, color: '#fff', border: '1px solid rgba(255,255,255,0.35)', borderRadius: 7, opacity: selected.size > PDF_BATCH_CAP ? 0.4 : 1, cursor: selected.size > PDF_BATCH_CAP ? 'not-allowed' : 'pointer' }}>
+              ⬇ Download PDF
+            </button>
+            {inactiveSelected.length > 0 && (
+              <button onClick={() => activateSelected(inactiveSelected)} disabled={activating}
+                style={{ ...S.btnActivate, opacity: activating ? 0.6 : 1 }}>
+                ✓ Activate {inactiveSelected.length} selected
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -637,7 +692,16 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
           <table style={{ width: '100%', borderCollapse: 'collapse' as const }}>
             <thead>
               <tr style={{ background: '#F8FAFC' }}>
-                {(inactiveCount > 0 && viewMode !== 'active') && <th style={{ width: 40, padding: '11px 14px', borderBottom: '1px solid #E2E8F0' }}></th>}
+                <th style={{ width: 40, padding: '11px 14px', borderBottom: '1px solid #E2E8F0' }}>
+                  <input type="checkbox" aria-label="Select all providers"
+                    checked={displayedProviders.length > 0 && displayedProviders.every(p => selected.has(p.id))}
+                    onChange={() => {
+                      const ids = displayedProviders.map(p => p.id)
+                      const all = ids.every(id => selected.has(id))
+                      setSelected(all ? new Set() : new Set(ids))
+                    }}
+                    style={{ accentColor: '#10B981' }}/>
+                </th>
                 <th style={{ padding: '11px 16px', textAlign: 'left' as const, fontSize: 11.5, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E2E8F0' }}>Name</th>
                 <th style={{ padding: '11px 16px', textAlign: 'left' as const, fontSize: 11.5, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E2E8F0' }}>Credential</th>
                 <th style={{ padding: '11px 16px', textAlign: 'left' as const, fontSize: 11.5, fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E2E8F0' }}>Location</th>
@@ -655,13 +719,9 @@ export default function ProvidersClient({ providers, inactiveCount, activeCount,
                 const joined = formatJoined(p.created_at)
                 return (
                   <tr key={p.id} style={{ borderBottom: '1px solid #F1F5F9', background: isChecked ? '#F0FDF4' : isInactive ? '#FEFCE8' : '#fff', transition: 'background 0.1s' }}>
-                    {(inactiveCount > 0 && viewMode !== 'active') && (
-                      <td style={{ padding: '12px 14px' }}>
-                        {isInactive && (
-                          <input type="checkbox" checked={isChecked} onChange={() => toggleSelect(p.id)} style={{ accentColor: '#10B981' }}/>
-                        )}
-                      </td>
-                    )}
+                    <td style={{ padding: '12px 14px' }}>
+                      <input type="checkbox" checked={isChecked} onChange={() => toggleSelect(p.id)} style={{ accentColor: '#10B981' }}/>
+                    </td>
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ fontWeight: 500, fontSize: 13.5, color: '#0F172A' }}>{p.name}</div>
                       <div style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>{p.email || p.phone || '—'}</div>
