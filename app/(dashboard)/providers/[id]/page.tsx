@@ -6,6 +6,7 @@ import PageHeader from '@/components/PageHeader'
 import StatusBadge from '@/components/StatusBadge'
 import ProviderForm from '@/components/ProviderForm'
 import SendToVitaButton from '@/components/SendToVitaButton'
+import ProfileActions from '@/components/ProfileActions'
 import { CREDENTIAL_LABELS, CredentialType } from '@/types'
 export default async function ProviderDetailPage({params}:{params:Promise<{id:string}>}) {
   const {id} = await params
@@ -18,7 +19,7 @@ export default async function ProviderDetailPage({params}:{params:Promise<{id:st
     <>
       <PageHeader title={provider.name} subtitle={`${provider.credential_type} · ${CREDENTIAL_LABELS[provider.credential_type as CredentialType]}`}
         breadcrumbs={[{label:'Providers',href:'/providers'},{label:provider.name}]}
-        actions={<div style={{display:'flex',gap:8,alignItems:'center'}}><StatusBadge label={provider.status} status={provider.status}/>{provider.available&&provider.status==='active'&&<StatusBadge label="Available" status="active"/>}<SendToVitaButton providerId={provider.id} vitaCandidateId={provider.vita_candidate_id??null} sentToVitaAt={provider.sent_to_vita_at??null}/></div>}/>
+        actions={<div style={{display:'flex',gap:8,alignItems:'center'}}><StatusBadge label={provider.status} status={provider.status}/>{provider.available&&provider.status==='active'&&<StatusBadge label="Available" status="active"/>}<ProfileActions providerId={provider.id} phone={provider.phone??null}/><SendToVitaButton providerId={provider.id} vitaCandidateId={provider.vita_candidate_id??null} sentToVitaAt={provider.sent_to_vita_at??null}/></div>}/>
       <div style={{padding:'28px 32px'}}>
         <ProviderForm provider={provider} mode="edit"/>
         {matchHistory.length>0&&(
