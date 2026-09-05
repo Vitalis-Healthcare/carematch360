@@ -3,6 +3,8 @@ const nextConfig = {
   experimental: {
     outputFileTracingIncludes: {
       '/api/providers/apply': ['./public/fonts/**/*', './public/branding/**/*'],
+      // v2.7.24 — provider profile PDF needs the same fonts + logo
+      '/api/providers/[id]/profile-pdf': ['./public/fonts/**/*', './public/branding/**/*'],
     },
   },
   async headers() {
