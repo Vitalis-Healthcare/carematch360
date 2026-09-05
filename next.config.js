@@ -5,6 +5,8 @@ const nextConfig = {
       '/api/providers/apply': ['./public/fonts/**/*', './public/branding/**/*'],
       // v2.7.24 — provider profile PDF needs the same fonts + logo
       '/api/providers/[id]/profile-pdf': ['./public/fonts/**/*', './public/branding/**/*'],
+      // v2.7.25 — combined (multi-select) profile PDF, same assets
+      '/api/providers/profile-pdf': ['./public/fonts/**/*', './public/branding/**/*'],
     },
   },
   async headers() {
