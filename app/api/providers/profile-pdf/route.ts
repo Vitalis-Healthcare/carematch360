@@ -77,10 +77,15 @@ export async function POST(req: NextRequest) {
 
   let idsRaw = ''
   let download = false
+  let caseId = ''
   try {
     const fd = await req.formData()
     idsRaw = String(fd.get('ids') ?? '')
     download = String(fd.get('download') ?? '') === '1'
+    // v2.7.26 — optional: when set, each page carries this case's match
+    // context (score / distance / skills matched), fetched server-side
+    // from case_matches rather than trusted from the client.
+    caseId = String(fd.get('case_id') ?? '').trim()
   } catch {
     return NextResponse.json({ error: 'Expected form data with an ids field' }, { status: 400 })
   }
@@ -115,12 +120,53 @@ export async function POST(req: NextRequest) {
   // the selection order the coordinator clicked in.
   const byId = new Map<string, ProviderProfile>()
   for (const r of rows ?? []) byId.set((r as ProviderProfile).id, r as ProviderProfile)
-  const providers = ids
+  let providers = ids
     .map((id) => byId.get(id))
     .filter((p): p is ProviderProfile => p != null)
 
   if (providers.length === 0) {
     return NextResponse.json({ error: 'No matching providers found' }, { status: 404 })
+  }
+
+  // v2.7.26 — case context: attach score / distance / skills matched
+  // from case_matches when a valid case_id was posted. Failures here
+  // degrade gracefully to plain profiles rather than blocking the PDF.
+  if (caseId && UUID_RE.test(caseId)) {
+    try {
+      const { data: caseRow } = await db
+        .from('cases')
+        .select('id,title,required_skills')
+        .eq('id', caseId)
+        .single()
+      const { data: matchRows } = await db
+        .from('case_matches')
+        .select('provider_id,match_score,distance_miles,skill_match_count')
+        .eq('case_id', caseId)
+        .in('provider_id', ids)
+      if (caseRow && matchRows) {
+        const skillsRequired = Array.isArray(caseRow.required_skills)
+          ? caseRow.required_skills.length
+          : null
+        const matchByProvider = new Map<string, (typeof matchRows)[number]>()
+        for (const m of matchRows) matchByProvider.set(m.provider_id, m)
+        providers = providers.map((p) => {
+          const m = matchByProvider.get(p.id)
+          if (!m) return p
+          return {
+            ...p,
+            match: {
+              caseTitle: caseRow.title ?? null,
+              matchScore: m.match_score,
+              distanceMiles: m.distance_miles,
+              skillMatchCount: m.skill_match_count,
+              skillsRequired,
+            },
+          }
+        })
+      }
+    } catch (err) {
+      console.error('[profile-pdf-batch] case context lookup failed (continuing plain):', err)
+    }
   }
 
   try {
