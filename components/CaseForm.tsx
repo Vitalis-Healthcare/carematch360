@@ -44,6 +44,9 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
   const [clientCoords, setClientCoords] = useState<{lat:number|null,lng:number|null}>({lat:null,lng:null})
   const [payerTypes, setPayerTypes] = useState<string[]>(caseData?.payer_types??[])
   const [clientAutoPopulated, setClientAutoPopulated] = useState(false)
+  // v2.7.26 — "whose profile to print" is a different question from
+  // "who to notify" (DispatchPanel), so this selection is its own state.
+  const [pdfSel, setPdfSel] = useState<Set<string>>(new Set())
 
   const toggleSkill = (s:string) => setSkills(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s])
   const togglePayer = (p:string) => setPayerTypes(prev=>{
@@ -51,6 +54,37 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
     if(prev.length>=2) return [prev[1],p]
     return [...prev,p]
   })
+
+  // v2.7.26 — print/download combined profile PDFs for selected matches.
+  // Same form-POST mechanism as the Provider Directory (v2.7.25): a real
+  // form submit avoids popup blockers for the inline (print) variant and
+  // downloads in place for the attachment variant. case_id makes the
+  // route attach match context (score / distance / skills) per page.
+  // Keep in sync with PDF_BATCH_CAP in app/api/providers/profile-pdf/route.ts.
+  const PDF_BATCH_CAP = 25
+  const togglePdfSel = (id:string) => setPdfSel(prev=>{
+    const s=new Set(prev); s.has(id)?s.delete(id):s.add(id); return s
+  })
+  function submitMatchPdf(download: boolean) {
+    const ids = [...pdfSel]
+    const caseId = savedCaseId || caseData?.id || ''
+    if (ids.length === 0 || ids.length > PDF_BATCH_CAP || !caseId) return
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = '/api/providers/profile-pdf'
+    if (!download) form.target = '_blank'
+    const add = (name:string, value:string) => {
+      const i = document.createElement('input')
+      i.type = 'hidden'; i.name = name; i.value = value
+      form.appendChild(i)
+    }
+    add('ids', ids.join(','))
+    add('case_id', caseId)
+    if (download) add('download', '1')
+    document.body.appendChild(form)
+    form.submit()
+    form.remove()
+  }
 
   useEffect(() => {
     const c = clients.find(x=>x.id===selectedClientId)
@@ -332,7 +366,26 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
                   <span style={{fontWeight:600,fontSize:14}}>Matching Results</span>
                   <span style={{marginLeft:10,fontSize:12.5,color:'var(--muted)'}}>{matches.length} eligible provider{matches.length!==1?'s':''}</span>
                 </div>
-                <div style={{display:'flex',gap:8}}>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  {pdfSel.size>0&&(
+                    <>
+                      {pdfSel.size>PDF_BATCH_CAP&&(
+                        <span style={{fontSize:11.5,color:'var(--amber)',fontWeight:500}}>Limit {PDF_BATCH_CAP} at a time</span>
+                      )}
+                      <button type="button" className="btn-secondary" style={{fontSize:12,padding:'5px 12px',opacity:pdfSel.size>PDF_BATCH_CAP?0.5:1}}
+                        disabled={pdfSel.size>PDF_BATCH_CAP}
+                        title="Open selected profiles as one print-ready PDF (with match score and distance)"
+                        onClick={()=>submitMatchPdf(false)}>
+                        🖨 Print {pdfSel.size} selected
+                      </button>
+                      <button type="button" className="btn-secondary" style={{fontSize:12,padding:'5px 12px',opacity:pdfSel.size>PDF_BATCH_CAP?0.5:1}}
+                        disabled={pdfSel.size>PDF_BATCH_CAP}
+                        title="Download selected profiles as one PDF (with match score and distance)"
+                        onClick={()=>submitMatchPdf(true)}>
+                        ⬇ PDF
+                      </button>
+                    </>
+                  )}
                   <div style={{display:'flex',border:'1px solid var(--border)',borderRadius:7,overflow:'hidden'}}>
                     {(['table','map'] as const).map(view=>(
                       <button key={view} type="button" onClick={()=>setResultsView(view)}
@@ -353,7 +406,18 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
 
               {resultsView==='table'&&(
                 <table className="data-table">
-                  <thead><tr><th>Rank</th><th>Provider</th><th>Score</th><th>Distance</th><th>Skills</th><th>Available</th><th></th></tr></thead>
+                  <thead><tr>
+                    <th style={{width:36}}>
+                      <input type="checkbox" aria-label="Select all matches"
+                        checked={matches.length>0&&matches.every((m:any)=>pdfSel.has(m.provider_id))}
+                        onChange={()=>{
+                          const ids=matches.map((m:any)=>m.provider_id)
+                          const all=ids.every((id:string)=>pdfSel.has(id))
+                          setPdfSel(all?new Set():new Set(ids))
+                        }}
+                        style={{accentColor:'var(--teal)'}}/>
+                    </th>
+                    <th>Rank</th><th>Provider</th><th>Score</th><th>Distance</th><th>Skills</th><th>Available</th><th></th></tr></thead>
                   <tbody>
                     {matches.map((m:any,i:number)=>{
                       const p=m.providers||m.provider
@@ -365,6 +429,9 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
                       return (
                         <>
                           <tr key={m.provider_id}>
+                            <td>
+                              <input type="checkbox" checked={pdfSel.has(m.provider_id)} onChange={()=>togglePdfSel(m.provider_id)} style={{accentColor:'var(--teal)'}}/>
+                            </td>
                             <td><div style={{width:24,height:24,borderRadius:'50%',background:i===0?'var(--teal)':'var(--bg)',color:i===0?'#fff':'var(--muted)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700}}>{i+1}</div></td>
                             <td>
                               <div style={{fontWeight:500}}>{p?.name}</div>
@@ -373,6 +440,12 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
                                 {(p?.additional_credentials||[]).length>0&&<span style={{color:'var(--subtle)'}}> + {p.additional_credentials.join(', ')}</span>}
                                 {p?.city&&` · ${p.city}`}
                               </div>
+                              {p?.phone&&(
+                                <a href={`tel:${p.phone}`} title={`Call ${p.name}`}
+                                  style={{fontSize:11.5,color:'var(--teal)',fontWeight:500,textDecoration:'none',display:'inline-flex',alignItems:'center',gap:3,marginTop:2}}>
+                                  📞 {p.phone}
+                                </a>
+                              )}
                             </td>
                             <td>
                               <div className="score-bar-wrap">
@@ -393,7 +466,7 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
                           </tr>
                           {isExpanded&&(
                             <tr key={`${m.provider_id}-exp`}>
-                              <td colSpan={7} style={{padding:0,background:'var(--bg)'}}>
+                              <td colSpan={8} style={{padding:0,background:'var(--bg)'}}>
                                 <div style={{padding:'14px 20px 14px 60px',display:'flex',gap:24,flexWrap:'wrap'}}>
                                   <div style={{minWidth:200}}>
                                     <div style={{fontWeight:600,fontSize:11,color:'var(--navy)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Score Breakdown</div>
@@ -420,7 +493,7 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
                                     <div style={{fontWeight:600,fontSize:11,color:'var(--navy)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Provider Details</div>
                                     <div style={{fontSize:12.5,color:'var(--muted)',marginBottom:4}}>📍 {[p?.city,p?.state].filter(Boolean).join(', ')||'Unknown'}</div>
                                     <div style={{fontSize:12.5,color:'var(--muted)',marginBottom:4}}>⊙ {p?.service_radius_miles??'?'} mile radius</div>
-                                    {p?.phone&&<div style={{fontSize:12.5,color:'var(--muted)',marginBottom:4}}>📞 {p.phone}</div>}
+                                    {p?.phone&&<div style={{fontSize:12.5,marginBottom:4}}><a href={`tel:${p.phone}`} style={{color:'var(--teal)',fontWeight:500,textDecoration:'none'}} title={`Call ${p?.name}`}>📞 {p.phone}</a></div>}
                                     {p?.has_car&&<div style={{fontSize:12,color:'var(--green)',marginBottom:2}}>✓ Has car</div>}
                                     {p?.spanish_speaking&&<div style={{fontSize:12,color:'var(--green)',marginBottom:2}}>✓ Spanish speaking</div>}
                                     {p?.hoyer_lift&&<div style={{fontSize:12,color:'var(--green)',marginBottom:2}}>✓ Hoyer lift</div>}
