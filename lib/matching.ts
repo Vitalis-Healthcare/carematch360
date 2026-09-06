@@ -1,4 +1,4 @@
-import { Provider, CareLevel, CARE_LEVEL_POOL } from '@/types'
+import { Provider, CareLevel, CredentialType, CARE_LEVEL_POOL } from '@/types'
 
 function toRad(d: number) { return d * Math.PI / 180 }
 
@@ -10,6 +10,10 @@ export function haversineDistance(lat1:number,lon1:number,lat2:number,lon2:numbe
 
 export interface MatchInput {
   care_level: CareLevel          // primary filter — determines eligible credential pool
+  // v2.7.27 — optional hard restriction WITHIN the care-level pool.
+  // Non-empty = only providers holding one of these credentials surface.
+  // Empty/undefined = the full care-level pool applies (previous behavior).
+  allowed_credentials?: CredentialType[] | null
   required_skills: string[]
   client_lat?: number|null
   client_lng?: number|null
@@ -40,7 +44,16 @@ export function scoreProvider(provider: Provider, input: MatchInput): MatchResul
   if (provider.status !== 'active') return null
 
   // ── Core filter: is this provider's credential eligible for this care level? ──
-  const eligiblePool = CARE_LEVEL_POOL[input.care_level]
+  // v2.7.27 — when the case restricts qualifications, the effective pool is
+  // the restriction intersected with the care-level pool. RULING: if a stored
+  // restriction is fully ineligible for the care level (only possible via
+  // out-of-UI edits), matching truthfully returns zero results rather than
+  // silently widening back to the full pool — silent widening is the exact
+  // behavior this feature eliminates.
+  const basePool = CARE_LEVEL_POOL[input.care_level]
+  const restriction = (input.allowed_credentials ?? []).filter(c => basePool.includes(c))
+  const eligiblePool =
+    (input.allowed_credentials?.length ?? 0) > 0 ? restriction : basePool
   const allCreds = [provider.credential_type, ...(provider.additional_credentials || [])]
   const credentialMatch = allCreds.some(c => eligiblePool.includes(c as any))
   if (!credentialMatch) return null

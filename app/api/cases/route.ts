@@ -9,6 +9,8 @@ export async function POST(req: NextRequest) {
       title:body.title, client_id:body.client_id||null,
       care_level:body.care_level||'personal_care',
       required_credential:body.required_credential||null,
+      // v2.7.27 — hard qualification restriction for matching (subset of care-level pool)
+      allowed_credentials:body.allowed_credentials||[],
       required_skills:body.required_skills||[],
       urgency:body.urgency||'routine',
       schedule_type:body.schedule_type||'one_time',

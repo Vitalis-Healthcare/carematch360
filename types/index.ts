@@ -119,6 +119,9 @@ export interface Case {
   gender_preference: GenderPref
   requires_car: boolean; requires_meal_prep: boolean; requires_total_care: boolean
   requires_wheelchair: boolean; requires_hoyer_lift: boolean; requires_spanish: boolean
+  // v2.7.27 — hard credential restriction for matching. Must be a subset of
+  // the care level's CARE_LEVEL_POOL; null/empty = no restriction (pool applies).
+  allowed_credentials: CredentialType[] | null
   special_instructions: string|null; status: CaseStatus
   assigned_provider_id: string|null
   dispatched_at: string|null
