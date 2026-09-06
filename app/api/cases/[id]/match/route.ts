@@ -26,6 +26,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
     const matchInput = {
       care_level: careLevel,
+      // v2.7.27 — hard qualification restriction stored on the case
+      allowed_credentials: caseData.allowed_credentials || [],
       required_skills: caseData.required_skills || [],
       client_lat: client?.lat ?? null,
       client_lng: client?.lng ?? null,

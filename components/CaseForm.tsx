@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { Case, CARE_LEVELS, CARE_LEVEL_LABELS, CARE_LEVEL_DESCRIPTIONS, CARE_LEVEL_POOL, PAYER_TYPES, SKILL_TO_REQ } from '@/types'
+import { Case, CARE_LEVELS, CARE_LEVEL_LABELS, CARE_LEVEL_DESCRIPTIONS, CARE_LEVEL_POOL, CREDENTIAL_LABELS, CREDENTIAL_TYPES, PAYER_TYPES, SKILL_TO_REQ } from '@/types'
 
 const REQ_GROUPS = [
   { label: 'Clinical Skills', items: ['Vent Care','Trach Care','Wound Care','G-Tube','IV Therapy','Catheter Care','Colostomy Care','Feeding Tube','Oxygen Therapy','Medication Management','Vital Signs'] },
@@ -47,6 +47,15 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
   // v2.7.26 — "whose profile to print" is a different question from
   // "who to notify" (DispatchPanel), so this selection is its own state.
   const [pdfSel, setPdfSel] = useState<Set<string>>(new Set())
+  // v2.7.27 — hard qualification restriction for matching. Mirrors the
+  // (uncontrolled) care_level select so the eligible chips track it.
+  const [allowedCreds, setAllowedCreds] = useState<string[]>((caseData as any)?.allowed_credentials ?? [])
+  const [careLevelSel, setCareLevelSel] = useState<string>(caseData?.care_level ?? '')
+  const eligibleCredChips: string[] =
+    careLevelSel && (CARE_LEVEL_POOL as any)[careLevelSel]
+      ? (CARE_LEVEL_POOL as any)[careLevelSel]
+      : [...CREDENTIAL_TYPES]
+  const toggleCred = (c:string) => setAllowedCreds(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c])
 
   const toggleSkill = (s:string) => setSkills(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s])
   const togglePayer = (p:string) => setPayerTypes(prev=>{
@@ -102,6 +111,18 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
         setSkills(clientReqs)
         setClientAutoPopulated(true)
       }
+      // v2.7.27 — seed qualifications from the client's credential fields
+      // and mirror the care level the select will default to, so the
+      // eligible chips (and any pruning) track the same level.
+      const clientLevel = c.care_needs?.[0]
+      if (clientLevel) setCareLevelSel(clientLevel)
+      const clientCreds = Array.from(new Set(
+        [c.required_credential, ...(c.additional_credentials || [])].filter(Boolean)
+      )) as string[]
+      if (clientCreds.length > 0) {
+        setAllowedCreds(clientCreds)
+        setClientAutoPopulated(true)
+      }
     }
   },[selectedClientId,clients])
 
@@ -123,6 +144,7 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
     const body = {
       title:fd.get('title'), client_id:selectedClientId||null,
       care_level:fd.get('care_level'), required_credential:null, required_skills:skills,
+      allowed_credentials:allowedCreds,
       urgency:fd.get('urgency'),
       schedule_type:fd.get('schedule_type')||'one_time',
       visit_date:fd.get('visit_date')||null, visit_time:fd.get('visit_time')||null,
@@ -232,7 +254,15 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
                       return null // rendered below as select for simplicity
                     })}
                   </div>
-                  <select className="form-select" name="care_level" defaultValue={caseData?.care_level || selectedClient?.care_needs?.[0] || ''} required>
+                  <select className="form-select" name="care_level" defaultValue={caseData?.care_level || selectedClient?.care_needs?.[0] || ''} required
+                    onChange={(e)=>{
+                      // v2.7.27 — keep the qualifications chips in sync with the
+                      // care level and prune selections that are no longer eligible.
+                      const lv=e.target.value
+                      setCareLevelSel(lv)
+                      const pool:(string[])=(CARE_LEVEL_POOL as any)[lv]??[]
+                      if(pool.length>0) setAllowedCreds(prev=>prev.filter(c=>pool.includes(c)))
+                    }}>
                     <option value="">Select care level</option>
                     <option value="companion_care">Companion Care — non-hands-on companionship</option>
                     <option value="personal_care">Personal Care — ADLs, bathing, dressing</option>
@@ -306,6 +336,28 @@ export default function CaseForm({ mode, clients, preselectedClient, caseData, m
                     style={{marginLeft:'auto',background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:13}}>✕</button>
                 </div>
               )}
+              {/* v2.7.27 — Qualifications: hard credential restriction for matching.
+                  Chips show only credentials eligible for the selected care level;
+                  changing care level prunes ineligible selections (see the select's
+                  onChange). Empty = any credential in the care-level pool. */}
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:11,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Qualifications</div>
+                <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>
+                  {allowedCreds.length>0
+                    ? <>Matching restricted to <strong>{allowedCreds.join(', ')}</strong> only</>
+                    : 'Leave empty to allow any credential eligible for the care level'}
+                </div>
+                <div className="skill-grid">
+                  {eligibleCredChips.map(c=>(
+                    <button key={c} type="button"
+                      className={`skill-chip${allowedCreds.includes(c)?' selected':''}`}
+                      title={(CREDENTIAL_LABELS as any)[c]??c}
+                      onClick={()=>toggleCred(c)}>
+                      {allowedCreds.includes(c)&&'✓ '}{c} — {(CREDENTIAL_LABELS as any)[c]??c}
+                    </button>
+                  ))}
+                </div>
+              </div>
               {REQ_GROUPS.map(group=>(
                 <div key={group.label} style={{marginBottom:16}}>
                   <div style={{fontSize:11,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>{group.label}</div>
