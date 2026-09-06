@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import PageHeader from '@/components/PageHeader'
+import PdfActions from '@/components/PdfActions'
 import StatusBadge from '@/components/StatusBadge'
 import CaseForm from '@/components/CaseForm'
 import CaseActions from '@/components/CaseActions'
@@ -64,6 +65,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
               {cfg?.label ?? caseData.status}
             </span>
             <StatusBadge label={caseData.urgency} status={caseData.urgency}/>
+            <PdfActions pdfUrl={`/api/cases/${caseData.id}/summary-pdf`}/>
           </div>
         }
       />

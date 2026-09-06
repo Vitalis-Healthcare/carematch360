@@ -6,6 +6,7 @@ import PageHeader from '@/components/PageHeader'
 import StatusBadge from '@/components/StatusBadge'
 import ClientForm from '@/components/ClientForm'
 import Link from 'next/link'
+import PdfActions from '@/components/PdfActions'
 export default async function ClientDetailPage({params}:{params:Promise<{id:string}>}) {
   const {id}=await params; const db=createServiceClient()
   let client:any=null, cases:any[]=[]
@@ -16,7 +17,7 @@ export default async function ClientDetailPage({params}:{params:Promise<{id:stri
     <>
       <PageHeader title={client.name} subtitle={[client.city,client.state].filter(Boolean).join(', ')||'Client record'}
         breadcrumbs={[{label:'Clients',href:'/clients'},{label:client.name}]}
-        actions={<div style={{display:'flex',gap:8}}><StatusBadge label={client.urgency_level} status={client.urgency_level}/><Link href={`/cases/new?client_id=${client.id}`}><button className="btn-teal">+ Open Case</button></Link></div>}/>
+        actions={<div style={{display:'flex',gap:8,alignItems:'center'}}><StatusBadge label={client.urgency_level} status={client.urgency_level}/><PdfActions pdfUrl={`/api/clients/${client.id}/facesheet-pdf`} phone={client.contact_phone??null} callTitle={client.contact_name?`Call ${client.contact_name}`:undefined}/><Link href={`/cases/new?client_id=${client.id}`}><button className="btn-teal">+ Open Case</button></Link></div>}/>
       <div style={{padding:'28px 32px'}}>
         <ClientForm client={client} mode="edit"/>
         {cases.length>0&&(
