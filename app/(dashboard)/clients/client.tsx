@@ -1,8 +1,13 @@
 "use client"
-import { useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import StatusBadge from '@/components/StatusBadge'
+
+// v2.7.28 — max clients per combined print/download face sheet batch.
+// Enforced here (buttons disable) AND server-side in
+// app/api/clients/facesheet-pdf/route.ts. Keep the two in sync.
+const PDF_BATCH_CAP = 25
 
 // Source label + color config — kept in one place so badges and dropdowns
 // stay in sync. Vita uses purple to match the new Leads tab on Cases.
@@ -40,6 +45,37 @@ function formatJoined(iso?: string): { rel: string; abs: string } {
 export default function ClientsClient({ clients, params }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
+  // v2.7.28 — face sheet print/download selection
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const toggleSelect = (id: string) => setSelected(prev => {
+    const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s
+  })
+  // Same form-POST mechanism as the Provider Directory (v2.7.25):
+  // target=_blank inline for print (no popup blockers), attachment
+  // variant downloads in place.
+  function submitFacesheetPdf(download: boolean) {
+    const ids = [...selected]
+    if (ids.length === 0 || ids.length > PDF_BATCH_CAP) return
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = '/api/clients/facesheet-pdf'
+    if (!download) form.target = '_blank'
+    const idsInput = document.createElement('input')
+    idsInput.type = 'hidden'
+    idsInput.name = 'ids'
+    idsInput.value = ids.join(',')
+    form.appendChild(idsInput)
+    if (download) {
+      const dl = document.createElement('input')
+      dl.type = 'hidden'
+      dl.name = 'download'
+      dl.value = '1'
+      form.appendChild(dl)
+    }
+    document.body.appendChild(form)
+    form.submit()
+    form.remove()
+  }
 
   // Counts for the source dropdown — these reflect the result set BEFORE
   // the source filter is applied (so each option shows how many would
@@ -177,6 +213,33 @@ export default function ClientsClient({ clients, params }: Props) {
         </div>
       )}
 
+      {/* Bulk action bar — shown when any clients are selected (v2.7.28) */}
+      {selected.size > 0 && (
+        <div style={{ background: '#0B3D5C', borderRadius: 10, padding: '12px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ color: '#fff', fontSize: 13.5, fontWeight: 500 }}>
+            {selected.size} client{selected.size !== 1 ? 's' : ''} selected
+            {selected.size > PDF_BATCH_CAP && (
+              <span style={{ marginLeft: 10, fontSize: 12, color: '#FCD34D', fontWeight: 400 }}>
+                Print/download is limited to {PDF_BATCH_CAP} at a time
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => setSelected(new Set())} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 12.5, fontWeight: 500 }}>✕ Clear</button>
+            <button onClick={() => submitFacesheetPdf(false)} disabled={selected.size > PDF_BATCH_CAP}
+              title="Open combined face sheets as one print-ready PDF"
+              style={{ background: 'none', color: '#fff', border: '1px solid rgba(255,255,255,0.35)', borderRadius: 7, padding: '6px 12px', fontSize: 12.5, fontWeight: 500, opacity: selected.size > PDF_BATCH_CAP ? 0.4 : 1, cursor: selected.size > PDF_BATCH_CAP ? 'not-allowed' : 'pointer' }}>
+              🖨 Print face sheets
+            </button>
+            <button onClick={() => submitFacesheetPdf(true)} disabled={selected.size > PDF_BATCH_CAP}
+              title="Download combined face sheets as one PDF"
+              style={{ background: 'none', color: '#fff', border: '1px solid rgba(255,255,255,0.35)', borderRadius: 7, padding: '6px 12px', fontSize: 12.5, fontWeight: 500, opacity: selected.size > PDF_BATCH_CAP ? 0.4 : 1, cursor: selected.size > PDF_BATCH_CAP ? 'not-allowed' : 'pointer' }}>
+              ⬇ Download PDF
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
         {clients.length === 0 ? (
@@ -189,6 +252,16 @@ export default function ClientsClient({ clients, params }: Props) {
           <table className="data-table">
             <thead>
               <tr>
+                <th style={{ width: 36 }}>
+                  <input type="checkbox" aria-label="Select all clients"
+                    checked={clients.length > 0 && clients.every(c => selected.has(c.id))}
+                    onChange={() => {
+                      const ids = clients.map(c => c.id)
+                      const all = ids.every(id => selected.has(id))
+                      setSelected(all ? new Set() : new Set(ids))
+                    }}
+                    style={{ accentColor: '#10B981' }}/>
+                </th>
                 <th>Client</th>
                 <th>Location</th>
                 <th>Required Credential</th>
@@ -209,7 +282,10 @@ export default function ClientsClient({ clients, params }: Props) {
                   ? c.payer_types.map((p: string) => p.replace(/_/g, ' ')).join(', ')
                   : '—'
                 return (
-                  <tr key={c.id}>
+                  <tr key={c.id} style={{ background: selected.has(c.id) ? '#F0FDF4' : undefined }}>
+                    <td>
+                      <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} style={{ accentColor: '#10B981' }}/>
+                    </td>
                     <td>
                       <div style={{ fontWeight: 500 }}>{c.name}</div>
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{c.contact_name || c.contact_phone || '—'}</div>
