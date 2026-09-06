@@ -452,7 +452,9 @@ function ProviderPage({
         <Text style={styles.sectionHeader}>Details</Text>
         <Row label="Gender" value={prettifyGender(provider.gender)} />
         <Row label="Joined" value={formatDate(provider.created_at)} />
-        <View style={styles.capRow}>
+        {/* v2.7.25a — wrap={false}: the 6-cell grid moves to the next
+            page as a unit instead of straddling the break. */}
+        <View style={styles.capRow} wrap={false}>
           {PROFILE_CAPABILITIES.map(({ key, label }) => {
             const on = Boolean(provider[key])
             return (
@@ -486,12 +488,18 @@ function ProviderPage({
       {skillGroups.length > 0 ? (
         <View style={styles.sectionWrap}>
           <Text style={styles.sectionHeader}>Skills</Text>
+          {/* v2.7.25a — mirror the proven SkillsBlock structure from
+              apply-notification-pdf.tsx: a plain row/wrap View with NO
+              flex property (reusing chipWrap's flex:1 collapsed the
+              measured height and stacked the next label on top), and
+              wrap={false} per group so a label never detaches from its
+              chips at a page break. */}
           {skillGroups.map((g) => (
-            <View key={g.label}>
+            <View key={g.label} wrap={false}>
               <Text style={styles.skillGroupLabel}>{g.label}</Text>
-              <View style={[styles.chipWrap, { flex: 0 }]}>
-                {g.skills.map((s) => (
-                  <Text key={s} style={styles.chip}>{s}</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                {g.skills.map((s, i) => (
+                  <Text key={`${g.label}-${i}-${s}`} style={styles.chip}>{s}</Text>
                 ))}
               </View>
             </View>
